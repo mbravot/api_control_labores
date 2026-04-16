@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uvicorn app.main:app --reload)",
+      "Bash(pip install *)",
+      "Bash(openssl rand *)"
+    ]
+  }
+}
