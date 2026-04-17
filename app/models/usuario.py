@@ -10,6 +10,12 @@ class Estado(Base):
     nombre: Mapped[str] = mapped_column(String(25), nullable=False)
 
 
+class Rol(Base):
+    __tablename__ = "rol"
+    id:     Mapped[int] = mapped_column(Integer, primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(45), nullable=False)
+
+
 class Empresa(Base):
     __tablename__ = "empresa"
     id:             Mapped[int]           = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -43,9 +49,10 @@ class Usuario(Base):
     usuario:       Mapped[str]           = mapped_column(String(25), nullable=False)
     email:         Mapped[str]           = mapped_column(String(100), nullable=False, unique=True)
     password_hash: Mapped[str]           = mapped_column(String(255), nullable=False)
-    rol:           Mapped[str]           = mapped_column(String(30), nullable=False, default="supervisor")
+    rol_id:        Mapped[int]           = mapped_column(Integer, ForeignKey("rol.id"), nullable=False)
     estado_id:     Mapped[int]           = mapped_column(Integer, ForeignKey("estado.id"), nullable=False, default=1)
     created_at:    Mapped[Optional[str]] = mapped_column(TIMESTAMP, server_default=func.now())
+    rol:    Mapped["Rol"]                 = relationship()
     empresa: Mapped["Empresa"]            = relationship(back_populates="usuarios")
     campos:  Mapped[List["UsuarioCampo"]] = relationship(back_populates="usuario")
 

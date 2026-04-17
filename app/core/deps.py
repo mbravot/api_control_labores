@@ -29,10 +29,15 @@ async def get_current_user(
     if usuario_id is None:
         raise credentials_exception
 
-    result = await db.execute(select(Usuario).where(Usuario.id == int(usuario_id)))
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(Usuario)
+        .options(selectinload(Usuario.rol))
+        .where(Usuario.id == int(usuario_id))
+    )
     usuario = result.scalar_one_or_none()
 
-    if usuario is None or not usuario.activo:
+    if usuario is None or usuario.estado_id != 1:
         raise credentials_exception
 
     return usuario
@@ -47,7 +52,7 @@ async def get_current_active_user(
 async def require_admin(
     current_user: Usuario = Depends(get_current_user),
 ) -> Usuario:
-    if current_user.rol != "admin_empresa":
+    if current_user.rol.nombre != "admin_empresa":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Se requiere rol admin_empresa",

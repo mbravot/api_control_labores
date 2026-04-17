@@ -16,8 +16,17 @@ class TokenResponse(BaseModel):
     token_type:   str = "bearer"
     usuario_id:   int
     nombre:       str
+    rol_id:       int
     rol:          str
     empresa_id:   int
+    campo_id:     Optional[int] = None
+
+
+class CampoSimpleResponse(BaseModel):
+    id:        int
+    nombre:    str
+    ubicacion: Optional[str] = None
+    model_config = {"from_attributes": True}
 
 
 # ---------------------------------------------------------------
@@ -28,7 +37,7 @@ class UsuarioBase(BaseModel):
     nombre:  str
     usuario: str
     email:   EmailStr
-    rol:     str = "supervisor"
+    rol_id:  int
 
 
 class UsuarioCreate(UsuarioBase):
@@ -46,7 +55,7 @@ class UsuarioCreate(UsuarioBase):
 class UsuarioUpdate(BaseModel):
     nombre:    Optional[str] = None
     usuario:   Optional[str] = None
-    rol:       Optional[str] = None
+    rol_id:    Optional[int] = None
     estado_id: Optional[int] = None
 
 

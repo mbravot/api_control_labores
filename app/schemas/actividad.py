@@ -163,46 +163,52 @@ class LaborResponse(BaseModel):
 # ---------------------------------------------------------------
 
 class ActividadCreate(BaseModel):
-    campo_id:          int
-    ceco_id:           int
-    labor_id:          int
-    unidad_medida_id:  int
-    tipopersonal_id:   int
+    campo_id:           int
+    fecha:              date
+    tipopersonal_id:    int
+    personal_id:        Optional[int] = None
     tiporendimiento_id: int
-    fecha:             date
-    tarifa:            Decimal
-    hora_inicio:       Optional[time] = None
-    hora_fin:          Optional[time] = None
-    trabajador_ids:    List[int]
+    labor_id:           int
+    unidad_medida_id:   int
+    cecotipo_id:        int
+    ceco_id:            int
+    tarifa:             Decimal
+    hora_inicio:        time
+    hora_fin:           time
+    trabajador_ids:     List[int]
 
 
 class ActividadUpdate(BaseModel):
-    ceco_id:           Optional[int]     = None
-    labor_id:          Optional[int]     = None
-    unidad_medida_id:  Optional[int]     = None
-    tipopersonal_id:   Optional[int]     = None
-    tiporendimiento_id: Optional[int]    = None
-    fecha:             Optional[date]    = None
-    tarifa:            Optional[Decimal] = None
-    hora_inicio:       Optional[time]    = None
-    hora_fin:          Optional[time]    = None
+    fecha:              Optional[date]    = None
+    tipopersonal_id:    Optional[int]     = None
+    personal_id:        Optional[int]     = None
+    tiporendimiento_id: Optional[int]     = None
+    labor_id:           Optional[int]     = None
+    unidad_medida_id:   Optional[int]     = None
+    cecotipo_id:        Optional[int]     = None
+    ceco_id:            Optional[int]     = None
+    tarifa:             Optional[Decimal] = None
+    hora_inicio:        Optional[time]    = None
+    hora_fin:           Optional[time]    = None
 
 
 class ActividadResponse(BaseModel):
-    id:                int
-    campo_id:          int
-    usuario_id:        int
-    ceco_id:           int
-    labor_id:          int
-    unidad_medida_id:  int
-    tipopersonal_id:   int
+    id:                 int
+    campo_id:           int
+    usuario_id:         int
+    fecha:              date
+    tipopersonal_id:    int
+    personal_id:        Optional[int] = None
     tiporendimiento_id: int
-    fecha:             date
-    tarifa:            Decimal
-    hora_inicio:       Optional[time] = None
-    hora_fin:          Optional[time] = None
-    estado_id:         int
-    estado:            Optional[EstadoActividadResponse] = None
+    labor_id:           int
+    unidad_medida_id:   int
+    cecotipo_id:        int
+    ceco_id:            int
+    tarifa:             Decimal
+    hora_inicio:        time
+    hora_fin:           time
+    estado_id:          int
+    estado:             Optional[EstadoActividadResponse] = None
     model_config = {"from_attributes": True}
 
 

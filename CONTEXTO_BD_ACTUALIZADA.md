@@ -36,11 +36,14 @@ campo
   estado_id FK→estado,
   created_at
 
+rol
+  id, nombre VARCHAR(30)          → 'admin_empresa','supervisor','consultor'
+
 usuario
   id, empresa_id FK→empresa,
   nombre, usuario VARCHAR(25),
   email, password_hash,
-  rol ENUM('admin_empresa','supervisor','consultor'),
+  rol_id FK→rol,
   estado_id FK→estado,
   created_at
 
@@ -92,13 +95,16 @@ permiso
 ```sql
 actividad
   id, campo_id FK→campo, usuario_id FK→usuario,
-  ceco_id FK→ceco, labor_id FK→labor,
-  unidad_medida_id FK→unidad_medida,
   fecha DATE,
   tipopersonal_id FK→tipo_personal,
+  personal_id FK→contratista NULL,   ← contratista asignado (solo si tipo=contratista)
   tiporendimiento_id FK→tipo_rendimiento,
+  labor_id FK→labor,
+  unidad_medida_id FK→unidad_medida,
+  cecotipo_id FK→ceco_tipo,
+  ceco_id FK→ceco,
   tarifa DECIMAL(10,2),
-  hora_inicio TIME NULL, hora_fin TIME NULL,
+  hora_inicio TIME NOT NULL, hora_fin TIME NOT NULL,
   estado_id FK→estado_actividad
   (SIN observaciones)
 
