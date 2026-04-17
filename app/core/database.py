@@ -9,7 +9,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
-    echo=False,
+    echo=True, # True para ver las consultas SQL en consola
 )
 
 AsyncSessionLocal = async_sessionmaker(

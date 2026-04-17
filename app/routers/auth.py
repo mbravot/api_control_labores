@@ -17,7 +17,10 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Usuario).where(Usuario.email == form_data.username)
+        select(Usuario).where(
+            (Usuario.email == form_data.username) |
+            (Usuario.nombre == form_data.username)
+        )
     )
     usuario = result.scalar_one_or_none()
 

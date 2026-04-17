@@ -1,38 +1,65 @@
 from typing import Optional, List
 from datetime import date, time
 from decimal import Decimal
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 
 # ---------------------------------------------------------------
-# Estado actividad
+# Catálogos
 # ---------------------------------------------------------------
 
 class EstadoActividadResponse(BaseModel):
     id:     int
     nombre: str
     orden:  int
+    model_config = {"from_attributes": True}
 
+
+class TipoPersonalResponse(BaseModel):
+    id:     int
+    nombre: str
+    model_config = {"from_attributes": True}
+
+
+class TipoRendimientoResponse(BaseModel):
+    id:     int
+    nombre: str
+    model_config = {"from_attributes": True}
+
+
+class CecoTipoResponse(BaseModel):
+    id:     int
+    nombre: str
+    model_config = {"from_attributes": True}
+
+
+class PorcentajeContratistaResponse(BaseModel):
+    id:         int
+    porcentaje: float
     model_config = {"from_attributes": True}
 
 
 # ---------------------------------------------------------------
-# Unidad de medida
+# Contratista
 # ---------------------------------------------------------------
 
-class UnidadMedidaBase(BaseModel):
-    nombre:      str
-    abreviatura: str
+class ContratistaCreate(BaseModel):
+    rut:      str
+    nombre:   str
+    campo_id: int
 
 
-class UnidadMedidaCreate(UnidadMedidaBase):
-    empresa_id: int
+class ContratistaUpdate(BaseModel):
+    nombre:    Optional[str] = None
+    estado_id: Optional[int] = None
 
 
-class UnidadMedidaResponse(UnidadMedidaBase):
-    id:         int
-    empresa_id: int
-
+class ContratistaResponse(BaseModel):
+    id:        int
+    rut:       str
+    nombre:    str
+    campo_id:  int
+    estado_id: int
     model_config = {"from_attributes": True}
 
 
@@ -40,43 +67,33 @@ class UnidadMedidaResponse(UnidadMedidaBase):
 # Trabajador
 # ---------------------------------------------------------------
 
-class TrabajadorBase(BaseModel):
-    nombre:              str
-    rut:                 Optional[str] = None
-    tipo:                str
-    empresa_contratista: Optional[str] = None
-
-    @field_validator("tipo")
-    @classmethod
-    def tipo_valido(cls, v: str) -> str:
-        if v not in ("propio", "contratista"):
-            raise ValueError("tipo debe ser 'propio' o 'contratista'")
-        return v
-
-    @field_validator("empresa_contratista")
-    @classmethod
-    def contratista_requiere_empresa(cls, v: Optional[str], info) -> Optional[str]:
-        if info.data.get("tipo") == "contratista" and not v:
-            raise ValueError("empresa_contratista es requerida cuando tipo es 'contratista'")
-        return v
-
-
-class TrabajadorCreate(TrabajadorBase):
-    campo_id: int
+class TrabajadorCreate(BaseModel):
+    campo_id:                 int
+    nombre:                   str
+    rut:                      Optional[str] = None
+    tipotrabajador_id:        int
+    contratista_id:           Optional[int] = None
+    porcentajecontratista_id: Optional[int] = None
 
 
 class TrabajadorUpdate(BaseModel):
-    nombre:              Optional[str] = None
-    rut:                 Optional[str] = None
-    empresa_contratista: Optional[str] = None
-    activo:              Optional[bool] = None
+    nombre:                   Optional[str] = None
+    rut:                      Optional[str] = None
+    contratista_id:           Optional[int] = None
+    porcentajecontratista_id: Optional[int] = None
+    estado_id:                Optional[int] = None
 
 
-class TrabajadorResponse(TrabajadorBase):
-    id:       int
-    campo_id: int
-    activo:   bool
-
+class TrabajadorResponse(BaseModel):
+    id:                       int
+    campo_id:                 int
+    nombre:                   str
+    rut:                      Optional[str] = None
+    tipotrabajador_id:        int
+    contratista_id:           Optional[int] = None
+    porcentajecontratista_id: Optional[int] = None
+    estado_id:                int
+    tipo_personal:            Optional[TipoPersonalResponse] = None
     model_config = {"from_attributes": True}
 
 
@@ -84,27 +101,34 @@ class TrabajadorResponse(TrabajadorBase):
 # CECO
 # ---------------------------------------------------------------
 
-class CecoBase(BaseModel):
-    tipo:   str = "agricola"
-    codigo: str
-    nombre: str
-
-
-class CecoCreate(CecoBase):
-    campo_id: int
+class CecoCreate(BaseModel):
+    campo_id:    int
+    cecotopi_id: int
+    nombre:      str
 
 
 class CecoUpdate(BaseModel):
-    tipo:   Optional[str] = None
-    nombre: Optional[str] = None
-    activo: Optional[bool] = None
+    cecotopi_id: Optional[int] = None
+    nombre:      Optional[str] = None
+    estado_id:   Optional[int] = None
 
 
-class CecoResponse(CecoBase):
-    id:       int
-    campo_id: int
-    activo:   bool
+class CecoResponse(BaseModel):
+    id:          int
+    campo_id:    int
+    cecotopi_id: int
+    nombre:      str
+    estado_id:   int
+    model_config = {"from_attributes": True}
 
+
+# ---------------------------------------------------------------
+# Unidad de medida
+# ---------------------------------------------------------------
+
+class UnidadMedidaResponse(BaseModel):
+    id:     int
+    nombre: str
     model_config = {"from_attributes": True}
 
 
@@ -112,26 +136,25 @@ class CecoResponse(CecoBase):
 # Labor
 # ---------------------------------------------------------------
 
-class LaborBase(BaseModel):
-    nombre:      str
-    descripcion: Optional[str] = None
-
-
-class LaborCreate(LaborBase):
-    campo_id: int
+class LaborCreate(BaseModel):
+    empresa_id: int
+    nombre:     str
+    unidad_id:  Optional[int] = None
 
 
 class LaborUpdate(BaseModel):
-    nombre:      Optional[str] = None
-    descripcion: Optional[str] = None
-    activo:      Optional[bool] = None
+    nombre:    Optional[str] = None
+    unidad_id: Optional[int] = None
+    estado_id: Optional[int] = None
 
 
-class LaborResponse(LaborBase):
-    id:       int
-    campo_id: int
-    activo:   bool
-
+class LaborResponse(BaseModel):
+    id:         int
+    empresa_id: int
+    nombre:     str
+    unidad_id:  Optional[int] = None
+    estado_id:  int
+    unidad:     Optional[UnidadMedidaResponse] = None
     model_config = {"from_attributes": True}
 
 
@@ -139,60 +162,47 @@ class LaborResponse(LaborBase):
 # Actividad
 # ---------------------------------------------------------------
 
-class ActividadBase(BaseModel):
-    fecha:            date
-    tipo_personal:    str
-    tipo_rendimiento: str
-    tarifa:           Decimal
-    hora_inicio:      Optional[time] = None
-    hora_fin:         Optional[time] = None
-    observaciones:    Optional[str]  = None
-
-    @field_validator("tipo_personal")
-    @classmethod
-    def tipo_personal_valido(cls, v: str) -> str:
-        if v not in ("propio", "contratista"):
-            raise ValueError("tipo_personal debe ser 'propio' o 'contratista'")
-        return v
-
-    @field_validator("tipo_rendimiento")
-    @classmethod
-    def tipo_rendimiento_valido(cls, v: str) -> str:
-        if v not in ("individual", "grupal"):
-            raise ValueError("tipo_rendimiento debe ser 'individual' o 'grupal'")
-        return v
-
-
-class ActividadCreate(ActividadBase):
-    campo_id:         int
-    ceco_id:          int
-    labor_id:         int
-    unidad_medida_id: int
-    trabajador_ids:   List[int]  # IDs de trabajadores a asignar
+class ActividadCreate(BaseModel):
+    campo_id:          int
+    ceco_id:           int
+    labor_id:          int
+    unidad_medida_id:  int
+    tipopersonal_id:   int
+    tiporendimiento_id: int
+    fecha:             date
+    tarifa:            Decimal
+    hora_inicio:       Optional[time] = None
+    hora_fin:          Optional[time] = None
+    trabajador_ids:    List[int]
 
 
 class ActividadUpdate(BaseModel):
-    ceco_id:          Optional[int]     = None
-    labor_id:         Optional[int]     = None
-    unidad_medida_id: Optional[int]     = None
-    fecha:            Optional[date]    = None
-    tarifa:           Optional[Decimal] = None
-    hora_inicio:      Optional[time]    = None
-    hora_fin:         Optional[time]    = None
-    observaciones:    Optional[str]     = None
-    estado_id:        Optional[int]     = None
+    ceco_id:           Optional[int]     = None
+    labor_id:          Optional[int]     = None
+    unidad_medida_id:  Optional[int]     = None
+    tipopersonal_id:   Optional[int]     = None
+    tiporendimiento_id: Optional[int]    = None
+    fecha:             Optional[date]    = None
+    tarifa:            Optional[Decimal] = None
+    hora_inicio:       Optional[time]    = None
+    hora_fin:          Optional[time]    = None
 
 
-class ActividadResponse(ActividadBase):
-    id:               int
-    campo_id:         int
-    usuario_id:       int
-    ceco_id:          int
-    labor_id:         int
-    unidad_medida_id: int
-    estado_id:        int
-    estado:           Optional[EstadoActividadResponse] = None
-
+class ActividadResponse(BaseModel):
+    id:                int
+    campo_id:          int
+    usuario_id:        int
+    ceco_id:           int
+    labor_id:          int
+    unidad_medida_id:  int
+    tipopersonal_id:   int
+    tiporendimiento_id: int
+    fecha:             date
+    tarifa:            Decimal
+    hora_inicio:       Optional[time] = None
+    hora_fin:          Optional[time] = None
+    estado_id:         int
+    estado:            Optional[EstadoActividadResponse] = None
     model_config = {"from_attributes": True}
 
 
@@ -210,7 +220,6 @@ class ActividadTrabajadorResponse(BaseModel):
     actividad_id:  int
     trabajador_id: int
     trabajador:    Optional[TrabajadorResponse] = None
-
     model_config = {"from_attributes": True}
 
 
@@ -218,31 +227,51 @@ class ActividadTrabajadorResponse(BaseModel):
 # Rendimiento
 # ---------------------------------------------------------------
 
-class RendimientoBase(BaseModel):
-    cantidad:    Decimal
-    observacion: Optional[str] = None
-
-
-class RendimientoCreate(RendimientoBase):
+class RendimientoCreate(BaseModel):
     actividad_id:  int
     trabajador_id: int
+    cantidad:      Decimal
 
 
 class RendimientoBulkCreate(BaseModel):
-    """Para cargar rendimientos de múltiples trabajadores en una sola llamada."""
-    actividad_id:  int
-    rendimientos:  List[RendimientoCreate]
+    actividad_id: int
+    rendimientos: List[RendimientoCreate]
 
 
 class RendimientoUpdate(BaseModel):
-    cantidad:    Optional[Decimal] = None
-    observacion: Optional[str]     = None
+    cantidad: Optional[Decimal] = None
 
 
-class RendimientoResponse(RendimientoBase):
-    id:            int
-    actividad_id:  int
+class RendimientoResponse(BaseModel):
+    id:               int
+    actividad_id:     int
+    trabajador_id:    int
+    cantidad:         Decimal
+    horas_trabajadas: float
+    horas_extras:     float
+    trabajador:       Optional[TrabajadorResponse] = None
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------
+# Permiso
+# ---------------------------------------------------------------
+
+class PermisoCreate(BaseModel):
     trabajador_id: int
-    trabajador:    Optional[TrabajadorResponse] = None
+    fecha:         date
+    horas_permiso: float
 
+
+class PermisoUpdate(BaseModel):
+    horas_permiso:    Optional[float] = None
+    estadopermiso_id: Optional[int]   = None
+
+
+class PermisoResponse(BaseModel):
+    id:               int
+    trabajador_id:    int
+    fecha:            date
+    horas_permiso:    float
+    estadopermiso_id: int
     model_config = {"from_attributes": True}

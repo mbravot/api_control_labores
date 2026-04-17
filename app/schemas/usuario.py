@@ -1,6 +1,5 @@
-from typing import Optional, List
+from typing import Optional
 from pydantic import BaseModel, EmailStr, field_validator
-import re
 
 
 # ---------------------------------------------------------------
@@ -8,7 +7,7 @@ import re
 # ---------------------------------------------------------------
 
 class LoginRequest(BaseModel):
-    email:    EmailStr
+    email:    str
     password: str
 
 
@@ -26,9 +25,10 @@ class TokenResponse(BaseModel):
 # ---------------------------------------------------------------
 
 class UsuarioBase(BaseModel):
-    nombre:     str
-    email:      EmailStr
-    rol:        str = "supervisor"
+    nombre:  str
+    usuario: str
+    email:   EmailStr
+    rol:     str = "supervisor"
 
 
 class UsuarioCreate(UsuarioBase):
@@ -44,16 +44,16 @@ class UsuarioCreate(UsuarioBase):
 
 
 class UsuarioUpdate(BaseModel):
-    nombre: Optional[str] = None
-    rol:    Optional[str] = None
-    activo: Optional[bool] = None
+    nombre:    Optional[str] = None
+    usuario:   Optional[str] = None
+    rol:       Optional[str] = None
+    estado_id: Optional[int] = None
 
 
 class UsuarioResponse(UsuarioBase):
     id:         int
     empresa_id: int
-    activo:     bool
-
+    estado_id:  int
     model_config = {"from_attributes": True}
 
 
@@ -66,7 +66,6 @@ class UsuarioCampoResponse(BaseModel):
     id:         int
     usuario_id: int
     campo_id:   int
-
     model_config = {"from_attributes": True}
 
 
@@ -86,9 +85,8 @@ class EmpresaCreate(EmpresaBase):
 
 
 class EmpresaResponse(EmpresaBase):
-    id:     int
-    activa: bool
-
+    id:        int
+    estado_id: int
     model_config = {"from_attributes": True}
 
 
@@ -108,12 +106,11 @@ class CampoCreate(CampoBase):
 class CampoUpdate(BaseModel):
     nombre:    Optional[str] = None
     ubicacion: Optional[str] = None
-    activo:    Optional[bool] = None
+    estado_id: Optional[int] = None
 
 
 class CampoResponse(CampoBase):
     id:         int
     empresa_id: int
-    activo:     bool
-
+    estado_id:  int
     model_config = {"from_attributes": True}

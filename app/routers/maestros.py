@@ -1,28 +1,75 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user, require_admin, verify_campo_access
 from app.models.usuario import Usuario
-from app.models.actividad import Trabajador, Ceco, Labor, UnidadMedida
+from app.models.actividad import (
+    Trabajador, Ceco, Labor, UnidadMedida, Contratista, Permiso,
+)
 from app.schemas.actividad import (
-    TrabajadorCreate,
-    TrabajadorUpdate,
-    TrabajadorResponse,
-    CecoCreate,
-    CecoUpdate,
-    CecoResponse,
-    LaborCreate,
-    LaborUpdate,
-    LaborResponse,
-    UnidadMedidaCreate,
+    TrabajadorCreate, TrabajadorUpdate, TrabajadorResponse,
+    CecoCreate, CecoUpdate, CecoResponse,
+    LaborCreate, LaborUpdate, LaborResponse,
     UnidadMedidaResponse,
+    ContratistaCreate, ContratistaUpdate, ContratistaResponse,
+    PermisoCreate, PermisoUpdate, PermisoResponse,
 )
 
 router = APIRouter(tags=["Maestros"])
+
+
+# ---------------------------------------------------------------
+# Contratistas
+# ---------------------------------------------------------------
+
+@router.post("/contratistas", response_model=ContratistaResponse, status_code=status.HTTP_201_CREATED)
+async def crear_contratista(
+    payload: ContratistaCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    await verify_campo_access(payload.campo_id, current_user, db)
+    contratista = Contratista(**payload.model_dump())
+    db.add(contratista)
+    await db.flush()
+    await db.refresh(contratista)
+    return contratista
+
+
+@router.get("/contratistas", response_model=List[ContratistaResponse])
+async def listar_contratistas(
+    campo_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    await verify_campo_access(campo_id, current_user, db)
+    result = await db.execute(
+        select(Contratista)
+        .where(Contratista.campo_id == campo_id, Contratista.estado_id == 1)
+        .order_by(Contratista.nombre)
+    )
+    return result.scalars().all()
+
+
+@router.patch("/contratistas/{contratista_id}", response_model=ContratistaResponse)
+async def actualizar_contratista(
+    contratista_id: int,
+    payload: ContratistaUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    contratista = await _get_contratista(contratista_id, db)
+    await verify_campo_access(contratista.campo_id, current_user, db)
+    for field, value in payload.model_dump(exclude_none=True).items():
+        setattr(contratista, field, value)
+    await db.flush()
+    await db.refresh(contratista)
+    return contratista
 
 
 # ---------------------------------------------------------------
@@ -39,22 +86,29 @@ async def crear_trabajador(
     trabajador = Trabajador(**payload.model_dump())
     db.add(trabajador)
     await db.flush()
-    await db.refresh(trabajador)
-    return trabajador
+    result = await db.execute(
+        select(Trabajador).options(selectinload(Trabajador.tipo_personal))
+        .where(Trabajador.id == trabajador.id)
+    )
+    return result.scalar_one()
 
 
 @router.get("/trabajadores", response_model=List[TrabajadorResponse])
 async def listar_trabajadores(
     campo_id: int = Query(...),
+    tipotrabajador_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
     await verify_campo_access(campo_id, current_user, db)
-    result = await db.execute(
+    stmt = (
         select(Trabajador)
-        .where(Trabajador.campo_id == campo_id)
-        .order_by(Trabajador.nombre)
+        .options(selectinload(Trabajador.tipo_personal))
+        .where(Trabajador.campo_id == campo_id, Trabajador.estado_id == 1)
     )
+    if tipotrabajador_id:
+        stmt = stmt.where(Trabajador.tipotrabajador_id == tipotrabajador_id)
+    result = await db.execute(stmt.order_by(Trabajador.nombre))
     return result.scalars().all()
 
 
@@ -70,8 +124,11 @@ async def actualizar_trabajador(
     for field, value in payload.model_dump(exclude_none=True).items():
         setattr(trabajador, field, value)
     await db.flush()
-    await db.refresh(trabajador)
-    return trabajador
+    result = await db.execute(
+        select(Trabajador).options(selectinload(Trabajador.tipo_personal))
+        .where(Trabajador.id == trabajador_id)
+    )
+    return result.scalar_one()
 
 
 # ---------------------------------------------------------------
@@ -100,7 +157,9 @@ async def listar_cecos(
 ):
     await verify_campo_access(campo_id, current_user, db)
     result = await db.execute(
-        select(Ceco).where(Ceco.campo_id == campo_id).order_by(Ceco.nombre)
+        select(Ceco)
+        .where(Ceco.campo_id == campo_id, Ceco.estado_id == 1)
+        .order_by(Ceco.nombre)
     )
     return result.scalars().all()
 
@@ -122,16 +181,15 @@ async def actualizar_ceco(
 
 
 # ---------------------------------------------------------------
-# Labores
+# Labores (de empresa, no de campo)
 # ---------------------------------------------------------------
 
 @router.post("/labores", response_model=LaborResponse, status_code=status.HTTP_201_CREATED)
 async def crear_labor(
     payload: LaborCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    _: Usuario = Depends(require_admin),
 ):
-    await verify_campo_access(payload.campo_id, current_user, db)
     labor = Labor(**payload.model_dump())
     db.add(labor)
     await db.flush()
@@ -141,13 +199,16 @@ async def crear_labor(
 
 @router.get("/labores", response_model=List[LaborResponse])
 async def listar_labores(
-    campo_id: int = Query(...),
+    empresa_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    await verify_campo_access(campo_id, current_user, db)
+    eid = empresa_id or current_user.empresa_id
     result = await db.execute(
-        select(Labor).where(Labor.campo_id == campo_id).order_by(Labor.nombre)
+        select(Labor)
+        .options(selectinload(Labor.unidad))
+        .where(Labor.empresa_id == eid, Labor.estado_id == 1)
+        .order_by(Labor.nombre)
     )
     return result.scalars().all()
 
@@ -157,10 +218,11 @@ async def actualizar_labor(
     labor_id: int,
     payload: LaborUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_admin),
 ):
     labor = await _get_labor(labor_id, db)
-    await verify_campo_access(labor.campo_id, current_user, db)
+    if labor.empresa_id != current_user.empresa_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sin acceso a esta labor")
     for field, value in payload.model_dump(exclude_none=True).items():
         setattr(labor, field, value)
     await db.flush()
@@ -169,38 +231,81 @@ async def actualizar_labor(
 
 
 # ---------------------------------------------------------------
-# Unidades de medida
+# Unidades de medida (catálogo global, solo lectura)
 # ---------------------------------------------------------------
-
-@router.post("/unidades-medida", response_model=UnidadMedidaResponse, status_code=status.HTTP_201_CREATED)
-async def crear_unidad_medida(
-    payload: UnidadMedidaCreate,
-    db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_admin),
-):
-    unidad = UnidadMedida(**payload.model_dump())
-    db.add(unidad)
-    await db.flush()
-    await db.refresh(unidad)
-    return unidad
-
 
 @router.get("/unidades-medida", response_model=List[UnidadMedidaResponse])
 async def listar_unidades_medida(
     db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(get_current_active_user),
+):
+    result = await db.execute(select(UnidadMedida).order_by(UnidadMedida.nombre))
+    return result.scalars().all()
+
+
+# ---------------------------------------------------------------
+# Permisos
+# ---------------------------------------------------------------
+
+@router.post("/permisos", response_model=PermisoResponse, status_code=status.HTTP_201_CREATED)
+async def crear_permiso(
+    payload: PermisoCreate,
+    db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
+    trabajador = await _get_trabajador(payload.trabajador_id, db)
+    await verify_campo_access(trabajador.campo_id, current_user, db)
+    permiso = Permiso(**payload.model_dump())
+    db.add(permiso)
+    await db.flush()
+    await db.refresh(permiso)
+    return permiso
+
+
+@router.get("/permisos", response_model=List[PermisoResponse])
+async def listar_permisos(
+    trabajador_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    trabajador = await _get_trabajador(trabajador_id, db)
+    await verify_campo_access(trabajador.campo_id, current_user, db)
     result = await db.execute(
-        select(UnidadMedida)
-        .where(UnidadMedida.empresa_id == current_user.empresa_id)
-        .order_by(UnidadMedida.nombre)
+        select(Permiso)
+        .where(Permiso.trabajador_id == trabajador_id)
+        .order_by(Permiso.fecha.desc())
     )
     return result.scalars().all()
+
+
+@router.patch("/permisos/{permiso_id}", response_model=PermisoResponse)
+async def actualizar_permiso(
+    permiso_id: int,
+    payload: PermisoUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    permiso = await _get_permiso(permiso_id, db)
+    trabajador = await _get_trabajador(permiso.trabajador_id, db)
+    await verify_campo_access(trabajador.campo_id, current_user, db)
+    for field, value in payload.model_dump(exclude_none=True).items():
+        setattr(permiso, field, value)
+    await db.flush()
+    await db.refresh(permiso)
+    return permiso
 
 
 # ---------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------
+
+async def _get_contratista(contratista_id: int, db: AsyncSession) -> Contratista:
+    result = await db.execute(select(Contratista).where(Contratista.id == contratista_id))
+    c = result.scalar_one_or_none()
+    if c is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contratista no encontrado")
+    return c
+
 
 async def _get_trabajador(trabajador_id: int, db: AsyncSession) -> Trabajador:
     result = await db.execute(select(Trabajador).where(Trabajador.id == trabajador_id))
@@ -224,3 +329,11 @@ async def _get_labor(labor_id: int, db: AsyncSession) -> Labor:
     if l is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor no encontrada")
     return l
+
+
+async def _get_permiso(permiso_id: int, db: AsyncSession) -> Permiso:
+    result = await db.execute(select(Permiso).where(Permiso.id == permiso_id))
+    p = result.scalar_one_or_none()
+    if p is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Permiso no encontrado")
+    return p
