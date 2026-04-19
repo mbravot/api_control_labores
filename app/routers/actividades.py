@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_active_user, verify_campo_access
 from app.models.usuario import Usuario
 from app.models.actividad import (
-    Actividad, ActividadTrabajador, EstadoActividad, Trabajador, Rendimiento,
+    Actividad, ActividadTrabajador, EstadoActividad, Trabajador, Rendimiento, Ceco,
 )
 from app.schemas.actividad import (
     ActividadCreate, ActividadUpdate, ActividadResponse,
@@ -31,6 +31,11 @@ async def crear_actividad(
     current_user: Usuario = Depends(get_current_active_user),
 ):
     await verify_campo_access(payload.campo_id, current_user, db)
+
+    result = await db.execute(select(Ceco).where(Ceco.id == payload.ceco_id, Ceco.campo_id == payload.campo_id))
+    ceco = result.scalar_one_or_none()
+    if ceco is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ceco no encontrado o no pertenece al campo")
 
     result = await db.execute(
         select(Trabajador).where(
@@ -63,7 +68,7 @@ async def crear_actividad(
         tiporendimiento_id=payload.tiporendimiento_id,
         labor_id=payload.labor_id,
         unidad_medida_id=payload.unidad_medida_id,
-        cecotipo_id=payload.cecotipo_id,
+        cecotipo_id=ceco.cecotipo_id,
         ceco_id=payload.ceco_id,
         tarifa=payload.tarifa,
         hora_inicio=payload.hora_inicio,
@@ -76,6 +81,7 @@ async def crear_actividad(
     for tid in payload.trabajador_ids:
         db.add(ActividadTrabajador(actividad_id=actividad.id, trabajador_id=tid))
     await db.flush()
+    await db.commit()
 
     return await _get_actividad_con_detalle(actividad.id, db)
 

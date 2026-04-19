@@ -89,7 +89,7 @@ class Ceco(Base):
     __tablename__ = "ceco"
     id:          Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     campo_id:    Mapped[int] = mapped_column(Integer, ForeignKey("campo.id"), nullable=False)
-    cecotopi_id: Mapped[int] = mapped_column(Integer, ForeignKey("ceco_tipo.id"), nullable=False)
+    cecotipo_id: Mapped[int] = mapped_column(Integer, ForeignKey("ceco_tipo.id"), nullable=False)
     nombre:      Mapped[str] = mapped_column(String(100), nullable=False)
     estado_id:   Mapped[int] = mapped_column(Integer, ForeignKey("estado.id"), nullable=False, default=1)
     ceco_tipo:   Mapped["CecoTipo"]        = relationship()

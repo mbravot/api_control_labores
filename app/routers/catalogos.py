@@ -8,12 +8,12 @@ from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.usuario import Usuario
 from app.models.actividad import (
-    TipoPersonal, TipoRendimiento, CecoTipo, PorcentajeContratista, EstadoActividad,
+    TipoPersonal, TipoRendimiento, CecoTipo, PorcentajeContratista, EstadoActividad, UnidadMedida,
 )
 from app.schemas.actividad import (
     TipoPersonalResponse, TipoRendimientoResponse,
     CecoTipoResponse, PorcentajeContratistaResponse,
-    EstadoActividadResponse,
+    EstadoActividadResponse, UnidadMedidaResponse,
 )
 
 router = APIRouter(prefix="/catalogos", tags=["Catálogos"])
@@ -61,4 +61,13 @@ async def listar_estados_actividad(
     _: Usuario = Depends(get_current_active_user),
 ):
     result = await db.execute(select(EstadoActividad).order_by(EstadoActividad.orden))
+    return result.scalars().all()
+
+#Obtiene todas las unidades de medida
+@router.get("/unidades-medida", response_model=List[UnidadMedidaResponse])
+async def listar_unidades_medida(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(get_current_active_user),
+):
+    result = await db.execute(select(UnidadMedida).order_by(UnidadMedida.nombre))
     return result.scalars().all()

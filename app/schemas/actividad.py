@@ -103,12 +103,12 @@ class TrabajadorResponse(BaseModel):
 
 class CecoCreate(BaseModel):
     campo_id:    int
-    cecotopi_id: int
+    cecotipo_id: int
     nombre:      str
 
 
 class CecoUpdate(BaseModel):
-    cecotopi_id: Optional[int] = None
+    cecotipo_id: Optional[int] = None
     nombre:      Optional[str] = None
     estado_id:   Optional[int] = None
 
@@ -116,7 +116,7 @@ class CecoUpdate(BaseModel):
 class CecoResponse(BaseModel):
     id:          int
     campo_id:    int
-    cecotopi_id: int
+    cecotipo_id: int
     nombre:      str
     estado_id:   int
     model_config = {"from_attributes": True}
@@ -170,7 +170,6 @@ class ActividadCreate(BaseModel):
     tiporendimiento_id: int
     labor_id:           int
     unidad_medida_id:   int
-    cecotipo_id:        int
     ceco_id:            int
     tarifa:             Decimal
     hora_inicio:        time
