@@ -27,6 +27,7 @@ router = APIRouter(tags=["Maestros"])
 # Contratistas
 # ---------------------------------------------------------------
 
+# Crear contratista
 @router.post("/contratistas", response_model=ContratistaResponse, status_code=status.HTTP_201_CREATED)
 async def crear_contratista(
     payload: ContratistaCreate,
@@ -40,7 +41,7 @@ async def crear_contratista(
     await db.refresh(contratista)
     return contratista
 
-
+# Obtiene todos los contratistas de un campo
 @router.get("/contratistas", response_model=List[ContratistaResponse])
 async def listar_contratistas(
     campo_id: int = Query(...),
@@ -54,6 +55,17 @@ async def listar_contratistas(
         .order_by(Contratista.nombre)
     )
     return result.scalars().all()
+
+
+@router.get("/contratistas/{contratista_id}", response_model=ContratistaResponse)
+async def obtener_contratista(
+    contratista_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    contratista = await _get_contratista(contratista_id, db)
+    await verify_campo_access(contratista.campo_id, current_user, db)
+    return contratista
 
 
 @router.patch("/contratistas/{contratista_id}", response_model=ContratistaResponse)
@@ -72,10 +84,23 @@ async def actualizar_contratista(
     return contratista
 
 
+@router.delete("/contratistas/{contratista_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_contratista(
+    contratista_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    contratista = await _get_contratista(contratista_id, db)
+    await verify_campo_access(contratista.campo_id, current_user, db)
+    contratista.estado_id = 2
+    await db.flush()
+
+
 # ---------------------------------------------------------------
 # Trabajadores
 # ---------------------------------------------------------------
 
+# Crear trabajador
 @router.post("/trabajadores", response_model=TrabajadorResponse, status_code=status.HTTP_201_CREATED)
 async def crear_trabajador(
     payload: TrabajadorCreate,
@@ -93,6 +118,7 @@ async def crear_trabajador(
     return result.scalar_one()
 
 
+# Obtiene todos los trabajadores de un campo
 @router.get("/trabajadores", response_model=List[TrabajadorResponse])
 async def listar_trabajadores(
     campo_id: int = Query(...),
@@ -110,6 +136,23 @@ async def listar_trabajadores(
         stmt = stmt.where(Trabajador.tipotrabajador_id == tipotrabajador_id)
     result = await db.execute(stmt.order_by(Trabajador.nombre))
     return result.scalars().all()
+
+
+@router.get("/trabajadores/{trabajador_id}", response_model=TrabajadorResponse)
+async def obtener_trabajador(
+    trabajador_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(Trabajador).options(selectinload(Trabajador.tipo_personal))
+        .where(Trabajador.id == trabajador_id)
+    )
+    trabajador = result.scalar_one_or_none()
+    if trabajador is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trabajador no encontrado")
+    await verify_campo_access(trabajador.campo_id, current_user, db)
+    return trabajador
 
 
 @router.patch("/trabajadores/{trabajador_id}", response_model=TrabajadorResponse)
@@ -131,10 +174,23 @@ async def actualizar_trabajador(
     return result.scalar_one()
 
 
+@router.delete("/trabajadores/{trabajador_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_trabajador(
+    trabajador_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    trabajador = await _get_trabajador(trabajador_id, db)
+    await verify_campo_access(trabajador.campo_id, current_user, db)
+    trabajador.estado_id = 2
+    await db.flush()
+
+
 # ---------------------------------------------------------------
 # CECOs
 # ---------------------------------------------------------------
 
+# Crear ceco
 @router.post("/cecos", response_model=CecoResponse, status_code=status.HTTP_201_CREATED)
 async def crear_ceco(
     payload: CecoCreate,
@@ -148,7 +204,7 @@ async def crear_ceco(
     await db.refresh(ceco)
     return ceco
 
-
+# Obtiene todos los cecos de un campo
 @router.get("/cecos", response_model=List[CecoResponse])
 async def listar_cecos(
     campo_id: int = Query(...),
@@ -163,7 +219,7 @@ async def listar_cecos(
     )
     return result.scalars().all()
 
-
+# Actualiza un ceco
 @router.patch("/cecos/{ceco_id}", response_model=CecoResponse)
 async def actualizar_ceco(
     ceco_id: int,
@@ -184,6 +240,7 @@ async def actualizar_ceco(
 # Labores (de empresa, no de campo)
 # ---------------------------------------------------------------
 
+# Crear labor
 @router.post("/labores", response_model=LaborResponse, status_code=status.HTTP_201_CREATED)
 async def crear_labor(
     payload: LaborCreate,
@@ -196,7 +253,7 @@ async def crear_labor(
     await db.refresh(labor)
     return labor
 
-
+# Obtiene todas las labores de una empresa
 @router.get("/labores", response_model=List[LaborResponse])
 async def listar_labores(
     empresa_id: Optional[int] = Query(None),
@@ -212,7 +269,7 @@ async def listar_labores(
     )
     return result.scalars().all()
 
-
+# Actualiza una labor
 @router.patch("/labores/{labor_id}", response_model=LaborResponse)
 async def actualizar_labor(
     labor_id: int,
@@ -233,7 +290,7 @@ async def actualizar_labor(
 # ---------------------------------------------------------------
 # Unidades de medida (catálogo global, solo lectura)
 # ---------------------------------------------------------------
-
+# Obtiene todas las unidades de medida
 @router.get("/unidades-medida", response_model=List[UnidadMedidaResponse])
 async def listar_unidades_medida(
     db: AsyncSession = Depends(get_db),
@@ -258,24 +315,41 @@ async def crear_permiso(
     permiso = Permiso(**payload.model_dump())
     db.add(permiso)
     await db.flush()
-    await db.refresh(permiso)
-    return permiso
+    return await _get_permiso_detalle(permiso.id, db)
 
 
 @router.get("/permisos", response_model=List[PermisoResponse])
 async def listar_permisos(
-    trabajador_id: int = Query(...),
+    campo_id: int = Query(...),
+    trabajador_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    trabajador = await _get_trabajador(trabajador_id, db)
-    await verify_campo_access(trabajador.campo_id, current_user, db)
-    result = await db.execute(
+    await verify_campo_access(campo_id, current_user, db)
+    stmt = (
         select(Permiso)
-        .where(Permiso.trabajador_id == trabajador_id)
-        .order_by(Permiso.fecha.desc())
+        .join(Permiso.trabajador)
+        .options(
+            selectinload(Permiso.trabajador),
+            selectinload(Permiso.estado_permiso),
+        )
+        .where(Trabajador.campo_id == campo_id)
     )
+    if trabajador_id:
+        stmt = stmt.where(Permiso.trabajador_id == trabajador_id)
+    result = await db.execute(stmt.order_by(Permiso.fecha.desc()))
     return result.scalars().all()
+
+
+@router.get("/permisos/{permiso_id}", response_model=PermisoResponse)
+async def obtener_permiso(
+    permiso_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    permiso = await _get_permiso_detalle(permiso_id, db)
+    await verify_campo_access(permiso.trabajador.campo_id, current_user, db)
+    return permiso
 
 
 @router.patch("/permisos/{permiso_id}", response_model=PermisoResponse)
@@ -291,8 +365,20 @@ async def actualizar_permiso(
     for field, value in payload.model_dump(exclude_none=True).items():
         setattr(permiso, field, value)
     await db.flush()
-    await db.refresh(permiso)
-    return permiso
+    return await _get_permiso_detalle(permiso_id, db)
+
+
+@router.delete("/permisos/{permiso_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_permiso(
+    permiso_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    permiso = await _get_permiso(permiso_id, db)
+    trabajador = await _get_trabajador(permiso.trabajador_id, db)
+    await verify_campo_access(trabajador.campo_id, current_user, db)
+    await db.delete(permiso)
+    await db.flush()
 
 
 # ---------------------------------------------------------------
@@ -333,6 +419,21 @@ async def _get_labor(labor_id: int, db: AsyncSession) -> Labor:
 
 async def _get_permiso(permiso_id: int, db: AsyncSession) -> Permiso:
     result = await db.execute(select(Permiso).where(Permiso.id == permiso_id))
+    p = result.scalar_one_or_none()
+    if p is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Permiso no encontrado")
+    return p
+
+
+async def _get_permiso_detalle(permiso_id: int, db: AsyncSession) -> Permiso:
+    result = await db.execute(
+        select(Permiso)
+        .options(
+            selectinload(Permiso.trabajador),
+            selectinload(Permiso.estado_permiso),
+        )
+        .where(Permiso.id == permiso_id)
+    )
     p = result.scalar_one_or_none()
     if p is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Permiso no encontrado")

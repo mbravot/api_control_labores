@@ -177,4 +177,5 @@ class Permiso(Base):
     fecha:            Mapped[date]  = mapped_column(Date, nullable=False)
     horas_permiso:    Mapped[float] = mapped_column(Float, nullable=False)
     estadopermiso_id: Mapped[int]   = mapped_column(Integer, ForeignKey("estado_permiso.id"), nullable=False, default=1)
-    trabajador: Mapped["Trabajador"] = relationship(back_populates="permisos")
+    trabajador:    Mapped["Trabajador"]    = relationship(back_populates="permisos")
+    estado_permiso: Mapped["EstadoPermiso"] = relationship()

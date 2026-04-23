@@ -166,7 +166,6 @@ class ActividadCreate(BaseModel):
     campo_id:           int
     fecha:              date
     tipopersonal_id:    int
-    personal_id:        Optional[int] = None
     tiporendimiento_id: int
     labor_id:           int
     unidad_medida_id:   int
@@ -262,6 +261,19 @@ class RendimientoResponse(BaseModel):
 # Permiso
 # ---------------------------------------------------------------
 
+class EstadoPermisoResponse(BaseModel):
+    id:     int
+    nombre: str
+    model_config = {"from_attributes": True}
+
+
+class TrabajadorSimpleResponse(BaseModel):
+    id:     int
+    nombre: str
+    rut:    Optional[str] = None
+    model_config = {"from_attributes": True}
+
+
 class PermisoCreate(BaseModel):
     trabajador_id: int
     fecha:         date
@@ -279,4 +291,6 @@ class PermisoResponse(BaseModel):
     fecha:            date
     horas_permiso:    float
     estadopermiso_id: int
+    trabajador:       Optional[TrabajadorSimpleResponse] = None
+    estado_permiso:   Optional[EstadoPermisoResponse]   = None
     model_config = {"from_attributes": True}

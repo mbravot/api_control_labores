@@ -59,6 +59,18 @@ class UsuarioUpdate(BaseModel):
     estado_id: Optional[int] = None
 
 
+class CambiarClaveRequest(BaseModel):
+    clave_actual: str
+    clave_nueva:  str
+
+    @field_validator("clave_nueva")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("La nueva contraseña debe tener al menos 8 caracteres")
+        return v
+
+
 class UsuarioResponse(UsuarioBase):
     id:         int
     empresa_id: int

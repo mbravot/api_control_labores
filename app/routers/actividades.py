@@ -52,19 +52,30 @@ async def crear_actividad(
             detail="Uno o más trabajadores no existen, no pertenecen al campo o están inactivos",
         )
 
+    contratista_ids = set()
     for t in trabajadores:
         if t.tipotrabajador_id != payload.tipopersonal_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"El trabajador '{t.nombre}' no coincide con el tipo de personal de la actividad",
             )
+        if t.contratista_id is not None:
+            contratista_ids.add(t.contratista_id)
+
+    if len(contratista_ids) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Todos los trabajadores deben pertenecer al mismo contratista",
+        )
+
+    personal_id = contratista_ids.pop() if contratista_ids else None
 
     actividad = Actividad(
         campo_id=payload.campo_id,
         usuario_id=current_user.id,
         fecha=payload.fecha,
         tipopersonal_id=payload.tipopersonal_id,
-        personal_id=payload.personal_id,
+        personal_id=personal_id,
         tiporendimiento_id=payload.tiporendimiento_id,
         labor_id=payload.labor_id,
         unidad_medida_id=payload.unidad_medida_id,
@@ -104,14 +115,12 @@ async def listar_actividades(
     stmt = (
         select(Actividad)
         .options(selectinload(Actividad.estado))
-        .where(Actividad.campo_id == campo_id)
+        .where(Actividad.campo_id == campo_id, Actividad.estado_id == (estado_id or 1))
     )
     if fecha_desde:
         stmt = stmt.where(Actividad.fecha >= fecha_desde)
     if fecha_hasta:
         stmt = stmt.where(Actividad.fecha <= fecha_hasta)
-    if estado_id:
-        stmt = stmt.where(Actividad.estado_id == estado_id)
 
     result = await db.execute(stmt.order_by(Actividad.fecha.desc(), Actividad.id.desc()))
     return result.scalars().all()

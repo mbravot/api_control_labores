@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user, require_admin
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, verify_password
 from app.models.usuario import Usuario
-from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse
+from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse, CambiarClaveRequest
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
@@ -52,6 +52,18 @@ async def listar_usuarios(
 @router.get("/me", response_model=UsuarioResponse)
 async def obtener_perfil(current_user: Usuario = Depends(get_current_active_user)):
     return current_user
+
+
+@router.patch("/me/clave", status_code=status.HTTP_204_NO_CONTENT)
+async def cambiar_clave(
+    payload: CambiarClaveRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    if not verify_password(payload.clave_actual, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La contraseña actual es incorrecta")
+    current_user.password_hash = get_password_hash(payload.clave_nueva)
+    await db.flush()
 
 
 @router.get("/{usuario_id}", response_model=UsuarioResponse)
