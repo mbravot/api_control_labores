@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime, date as date_type
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -9,10 +9,14 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_active_user, verify_campo_access
 from app.models.usuario import Usuario
-from app.models.actividad import Actividad, ActividadTrabajador, Rendimiento, RendimientoGrupal, Trabajador
+from app.models.actividad import (
+    Actividad, ActividadTrabajador, Rendimiento, RendimientoGrupal,
+    Trabajador, Labor, Ceco,
+)
 from app.schemas.actividad import (
     RendimientoCreate, RendimientoBulkCreate, RendimientoUpdate, RendimientoResponse,
     RendimientoGrupalCreate, RendimientoGrupalUpdate, RendimientoGrupalResponse,
+    HorasTrabajadasItem,
 )
 
 router = APIRouter(prefix="/rendimientos", tags=["Rendimientos"])
@@ -24,8 +28,7 @@ def _calcular_horas(actividad: Actividad) -> tuple[float, float]:
     inicio = datetime.combine(date_type.today(), actividad.hora_inicio)
     fin    = datetime.combine(date_type.today(), actividad.hora_fin)
     horas  = (fin - inicio).total_seconds() / 3600
-    extras = max(0.0, horas - 8.0)
-    return round(horas, 2), round(extras, 2)
+    return round(horas, 2), 0.0
 
 
 # ---------------------------------------------------------------
@@ -137,6 +140,93 @@ async def listar_rendimientos(
         .order_by(Rendimiento.id)
     )
     return result.scalars().all()
+
+
+# ---------------------------------------------------------------
+# GET /rendimientos/horas-trabajadas?campo_id=
+# ---------------------------------------------------------------
+
+@router.get("/horas-trabajadas", response_model=List[HorasTrabajadasItem])
+async def listar_horas_trabajadas_propios(
+    campo_id: int = Query(...),
+    fecha_desde: Optional[date_type] = Query(None),
+    fecha_hasta: Optional[date_type] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    await verify_campo_access(campo_id, current_user, db)
+
+    base_filters = [
+        Actividad.campo_id == campo_id,
+        Actividad.usuario_id == current_user.id,
+        Actividad.tipopersonal_id == 1,
+        Actividad.estado_id == 1,
+    ]
+    if fecha_desde:
+        base_filters.append(Actividad.fecha >= fecha_desde)
+    if fecha_hasta:
+        base_filters.append(Actividad.fecha <= fecha_hasta)
+
+    stmt_ind = (
+        select(Rendimiento, Actividad, Labor, Ceco, Trabajador)
+        .join(Actividad, Rendimiento.actividad_id == Actividad.id)
+        .join(Labor, Actividad.labor_id == Labor.id)
+        .join(Ceco, Actividad.ceco_id == Ceco.id)
+        .join(Trabajador, Rendimiento.trabajador_id == Trabajador.id)
+        .where(*base_filters)
+        .order_by(Actividad.fecha.desc(), Rendimiento.id.desc())
+    )
+    res_ind = await db.execute(stmt_ind)
+
+    items: List[HorasTrabajadasItem] = []
+    for r, a, l, c, t in res_ind.all():
+        items.append(HorasTrabajadasItem(
+            tipo="individual",
+            rendimiento_id=r.id,
+            actividad_id=a.id,
+            fecha=a.fecha,
+            hora_inicio=a.hora_inicio,
+            hora_fin=a.hora_fin,
+            labor_id=l.id,
+            labor_nombre=l.nombre,
+            ceco_id=c.id,
+            ceco_nombre=c.nombre,
+            trabajador_id=t.id,
+            trabajador_nombre=t.nombre,
+            trabajador_rut=t.rut,
+            horas_trabajadas=r.horas_trabajadas,
+            horas_extras=r.horas_extras,
+        ))
+
+    stmt_grp = (
+        select(RendimientoGrupal, Actividad, Labor, Ceco)
+        .join(Actividad, RendimientoGrupal.actividad_id == Actividad.id)
+        .join(Labor, Actividad.labor_id == Labor.id)
+        .join(Ceco, Actividad.ceco_id == Ceco.id)
+        .where(*base_filters)
+        .order_by(Actividad.fecha.desc(), RendimientoGrupal.id.desc())
+    )
+    res_grp = await db.execute(stmt_grp)
+
+    for g, a, l, c in res_grp.all():
+        items.append(HorasTrabajadasItem(
+            tipo="grupal",
+            rendimiento_id=g.id,
+            actividad_id=a.id,
+            fecha=a.fecha,
+            hora_inicio=a.hora_inicio,
+            hora_fin=a.hora_fin,
+            labor_id=l.id,
+            labor_nombre=l.nombre,
+            ceco_id=c.id,
+            ceco_nombre=c.nombre,
+            cantidad_trabajadores=g.cantidad_trabajadores,
+            horas_trabajadas=g.horas_trabajadas,
+            horas_extras=g.horas_extras,
+        ))
+
+    items.sort(key=lambda x: (x.fecha, x.actividad_id, x.tipo, x.rendimiento_id), reverse=True)
+    return items
 
 
 # ---------------------------------------------------------------

@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_active_user, require_admin, verify_campo_access
 from app.models.usuario import Usuario
 from app.models.actividad import (
-    Trabajador, Ceco, Labor, UnidadMedida, Contratista, Permiso,
+    Trabajador, Ceco, Labor, UnidadMedida, Contratista, Permiso, HorasPorDia,
 )
 from app.schemas.actividad import (
     TrabajadorCreate, TrabajadorUpdate, TrabajadorResponse,
@@ -18,6 +18,7 @@ from app.schemas.actividad import (
     UnidadMedidaResponse,
     ContratistaCreate, ContratistaUpdate, ContratistaResponse,
     PermisoCreate, PermisoUpdate, PermisoResponse,
+    HorasPorDiaResponse,
 )
 
 router = APIRouter(tags=["Maestros"])
@@ -57,6 +58,7 @@ async def listar_contratistas(
     return result.scalars().all()
 
 
+# Obtiene un contratista por id
 @router.get("/contratistas/{contratista_id}", response_model=ContratistaResponse)
 async def obtener_contratista(
     contratista_id: int,
@@ -68,6 +70,7 @@ async def obtener_contratista(
     return contratista
 
 
+# Actualiza un contratista
 @router.patch("/contratistas/{contratista_id}", response_model=ContratistaResponse)
 async def actualizar_contratista(
     contratista_id: int,
@@ -84,6 +87,7 @@ async def actualizar_contratista(
     return contratista
 
 
+# Elimina un contratista
 @router.delete("/contratistas/{contratista_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def eliminar_contratista(
     contratista_id: int,
@@ -137,7 +141,7 @@ async def listar_trabajadores(
     result = await db.execute(stmt.order_by(Trabajador.nombre))
     return result.scalars().all()
 
-
+# Obtiene un trabajador por id
 @router.get("/trabajadores/{trabajador_id}", response_model=TrabajadorResponse)
 async def obtener_trabajador(
     trabajador_id: int,
@@ -155,6 +159,7 @@ async def obtener_trabajador(
     return trabajador
 
 
+# Actualiza un trabajador
 @router.patch("/trabajadores/{trabajador_id}", response_model=TrabajadorResponse)
 async def actualizar_trabajador(
     trabajador_id: int,
@@ -174,6 +179,7 @@ async def actualizar_trabajador(
     return result.scalar_one()
 
 
+# Elimina un trabajador
 @router.delete("/trabajadores/{trabajador_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def eliminar_trabajador(
     trabajador_id: int,
@@ -301,9 +307,27 @@ async def listar_unidades_medida(
 
 
 # ---------------------------------------------------------------
+# Horas por día (configuración de jornada por empresa)
+# ---------------------------------------------------------------
+# Obtiene las horas por día de la empresa del usuario logueado
+@router.get("/horas-por-dia", response_model=List[HorasPorDiaResponse])
+async def listar_horas_por_dia(
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(HorasPorDia)
+        .options(selectinload(HorasPorDia.nombre_dia))
+        .where(HorasPorDia.empresa_id == current_user.empresa_id)
+        .order_by(HorasPorDia.nombredia_id)
+    )
+    return result.scalars().all()
+
+
+# ---------------------------------------------------------------
 # Permisos
 # ---------------------------------------------------------------
-
+# Crear permiso (solo trabajadores propios)
 @router.post("/permisos", response_model=PermisoResponse, status_code=status.HTTP_201_CREATED)
 async def crear_permiso(
     payload: PermisoCreate,
@@ -312,12 +336,14 @@ async def crear_permiso(
 ):
     trabajador = await _get_trabajador(payload.trabajador_id, db)
     await verify_campo_access(trabajador.campo_id, current_user, db)
+    _verificar_trabajador_propio(trabajador)
     permiso = Permiso(**payload.model_dump())
     db.add(permiso)
     await db.flush()
     return await _get_permiso_detalle(permiso.id, db)
 
 
+# Obtiene todos los permisos de un campo (solo trabajadores propios)
 @router.get("/permisos", response_model=List[PermisoResponse])
 async def listar_permisos(
     campo_id: int = Query(...),
@@ -333,14 +359,17 @@ async def listar_permisos(
             selectinload(Permiso.trabajador),
             selectinload(Permiso.estado_permiso),
         )
-        .where(Trabajador.campo_id == campo_id)
+        .where(
+            Trabajador.campo_id == campo_id,
+            Trabajador.tipotrabajador_id == 1,
+        )
     )
     if trabajador_id:
         stmt = stmt.where(Permiso.trabajador_id == trabajador_id)
     result = await db.execute(stmt.order_by(Permiso.fecha.desc()))
     return result.scalars().all()
 
-
+# Obtiene un permiso por id (solo trabajadores propios)
 @router.get("/permisos/{permiso_id}", response_model=PermisoResponse)
 async def obtener_permiso(
     permiso_id: int,
@@ -349,9 +378,11 @@ async def obtener_permiso(
 ):
     permiso = await _get_permiso_detalle(permiso_id, db)
     await verify_campo_access(permiso.trabajador.campo_id, current_user, db)
+    _verificar_trabajador_propio(permiso.trabajador)
     return permiso
 
 
+# Actualiza un permiso (solo trabajadores propios)
 @router.patch("/permisos/{permiso_id}", response_model=PermisoResponse)
 async def actualizar_permiso(
     permiso_id: int,
@@ -362,12 +393,14 @@ async def actualizar_permiso(
     permiso = await _get_permiso(permiso_id, db)
     trabajador = await _get_trabajador(permiso.trabajador_id, db)
     await verify_campo_access(trabajador.campo_id, current_user, db)
+    _verificar_trabajador_propio(trabajador)
     for field, value in payload.model_dump(exclude_none=True).items():
         setattr(permiso, field, value)
     await db.flush()
     return await _get_permiso_detalle(permiso_id, db)
 
 
+# Elimina un permiso (solo trabajadores propios)
 @router.delete("/permisos/{permiso_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def eliminar_permiso(
     permiso_id: int,
@@ -377,6 +410,7 @@ async def eliminar_permiso(
     permiso = await _get_permiso(permiso_id, db)
     trabajador = await _get_trabajador(permiso.trabajador_id, db)
     await verify_campo_access(trabajador.campo_id, current_user, db)
+    _verificar_trabajador_propio(trabajador)
     await db.delete(permiso)
     await db.flush()
 
@@ -399,6 +433,14 @@ async def _get_trabajador(trabajador_id: int, db: AsyncSession) -> Trabajador:
     if t is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trabajador no encontrado")
     return t
+
+
+def _verificar_trabajador_propio(trabajador: Trabajador) -> None:
+    if trabajador.tipotrabajador_id != 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Los permisos solo aplican a trabajadores propios",
+        )
 
 
 async def _get_ceco(ceco_id: int, db: AsyncSession) -> Ceco:

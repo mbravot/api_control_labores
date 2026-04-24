@@ -10,12 +10,13 @@ from app.core.database import get_db
 from app.core.deps import get_current_active_user, verify_campo_access
 from app.models.usuario import Usuario
 from app.models.actividad import (
-    Actividad, ActividadTrabajador, EstadoActividad, Trabajador, Rendimiento, Ceco,
+    Actividad, ActividadTrabajador, EstadoActividad, Trabajador, Rendimiento, RendimientoGrupal, Ceco,
 )
 from app.schemas.actividad import (
     ActividadCreate, ActividadUpdate, ActividadResponse,
     ActividadDetalleResponse, ActividadTrabajadorResponse,
 )
+from app.routers.rendimientos import _calcular_horas
 
 router = APIRouter(prefix="/actividades", tags=["Actividades"])
 
@@ -155,9 +156,24 @@ async def actualizar_actividad(
     actividad = await _get_actividad(actividad_id, db)
     await verify_campo_access(actividad.campo_id, current_user, db)
 
-    for field, value in payload.model_dump(exclude_none=True).items():
+    cambios = payload.model_dump(exclude_none=True)
+    for field, value in cambios.items():
         setattr(actividad, field, value)
     await db.flush()
+
+    if "hora_inicio" in cambios or "hora_fin" in cambios:
+        horas, extras = _calcular_horas(actividad)
+        await db.execute(
+            Rendimiento.__table__.update()
+            .where(Rendimiento.actividad_id == actividad_id)
+            .values(horas_trabajadas=horas, horas_extras=extras)
+        )
+        await db.execute(
+            RendimientoGrupal.__table__.update()
+            .where(RendimientoGrupal.actividad_id == actividad_id)
+            .values(horas_trabajadas=horas, horas_extras=extras)
+        )
+        await db.flush()
 
     result = await db.execute(
         select(Actividad).options(selectinload(Actividad.estado))

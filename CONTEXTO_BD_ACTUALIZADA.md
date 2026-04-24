@@ -1,13 +1,13 @@
 # CONTEXTO ACTUALIZADO — Control de Labores
 # BD real vs diseño original: cambios aplicados
-# Válido para: FastAPI (continuar routers) + Flutter (modelos Drift + providers)
-# Fecha: 2026-04-16
+# Válido para: FastAPI (routers actuales) + Flutter (modelos Drift + providers)
+# Fecha: 2026-04-24
 
 ---
 
 ## 1. ESQUEMA REAL DE LA BASE DE DATOS
 
-Host: 200.73.20.99:35026 | DB: lahornilla_control_labores | User: lahornilla_mbravo
+Host: 186.64.118.105:3306 | DB: agrico24_control_labores | User: agrico24_mbravo
 
 ### Tablas de catálogo (solo lectura desde la app)
 
@@ -19,8 +19,8 @@ ceco_tipo           id | nombre                         → tipos de CECO
 porcentaje_contratista id | porcentaje                  → porcentajes para contratistas
 estado_actividad    id | nombre | orden                 → 1=creada,2=revisada,3=aprobada,4=finalizada
 estado_permiso      id | nombre                         → estados de permisos de trabajadores
-especie             id | nombre | caja_equivalente
-variedad            id | nombre | especie_id
+unidad_medida       id | nombre VARCHAR(50)             → catálogo global (sin FKs)
+nombre_dia          id | nombre VARCHAR(25)             → lunes, martes, ..., domingo
 ```
 
 ### Tablas tenant / acceso
@@ -37,7 +37,7 @@ campo
   created_at
 
 rol
-  id, nombre VARCHAR(30)          → 'admin_empresa','supervisor','consultor'
+  id, nombre VARCHAR(45)                → 'admin_empresa','supervisor','consultor'
 
 usuario
   id, empresa_id FK→empresa,
@@ -51,27 +51,32 @@ usuario_campo
   id, usuario_id FK→usuario, campo_id FK→campo
 ```
 
+### Tablas de configuración por empresa
+
+```sql
+horas_por_dia                           ← horas de jornada configuradas por día/empresa
+  id, empresa_id FK→empresa,
+  nombredia_id FK→nombre_dia,
+  horas_dias FLOAT NOT NULL
+```
+
 ### Tablas maestros por campo/empresa
 
 ```sql
-unidad_medida                        ← SIMPLIFICADA: solo id + nombre
-  id, nombre VARCHAR(50)
-  (sin empresa_id, sin labor_id — es catálogo global)
-
-labor                                ← DE EMPRESA, con unidad por defecto
+labor                                   ← DE EMPRESA, con unidad por defecto
   id, empresa_id FK→empresa,
   nombre VARCHAR(100),
-  unidad_id FK→unidad_medida NULL,   ← unidad de medida sugerida para esta labor
+  unidad_id FK→unidad_medida NULL,      ← unidad sugerida para esta labor
   estado_id FK→estado
 
 contratista
-  id, rut, nombre,
+  id, rut VARCHAR(12), nombre VARCHAR(45),
   campo_id FK→campo,
   estado_id FK→estado
 
 trabajador
   id, campo_id FK→campo,
-  nombre, rut,
+  nombre VARCHAR(100), rut VARCHAR(12) NULL,
   tipotrabajador_id FK→tipo_personal,
   contratista_id FK→contratista NULL,
   porcentajecontratista_id FK→porcentaje_contratista NULL,
@@ -80,8 +85,8 @@ trabajador
 
 ceco
   id, campo_id FK→campo,
-  cecotopi_id FK→ceco_tipo,
-  nombre,
+  cecotipo_id FK→ceco_tipo,             ← nombre real de la columna
+  nombre VARCHAR(100),
   estado_id FK→estado
 
 permiso
@@ -97,27 +102,34 @@ actividad
   id, campo_id FK→campo, usuario_id FK→usuario,
   fecha DATE,
   tipopersonal_id FK→tipo_personal,
-  personal_id FK→contratista NULL,   ← contratista asignado (solo si tipo=contratista)
+  personal_id FK→contratista NULL,      ← contratista asignado (solo si tipo=contratista)
   tiporendimiento_id FK→tipo_rendimiento,
   labor_id FK→labor,
   unidad_medida_id FK→unidad_medida,
-  cecotipo_id FK→ceco_tipo,
+  cecotipo_id FK→ceco_tipo,             ← denormalizado desde ceco.cecotipo_id
   ceco_id FK→ceco,
   tarifa DECIMAL(10,2),
-  hora_inicio TIME NOT NULL, hora_fin TIME NOT NULL,
-  estado_id FK→estado_actividad
-  (SIN observaciones)
+  hora_inicio TIME NOT NULL, hora_fin TIME NOT NULL,   ← ambos obligatorios
+  estado_id FK→estado_actividad (SmallInteger)
 
 actividad_trabajador
   id, actividad_id FK→actividad, trabajador_id FK→trabajador
 
-rendimiento
+rendimiento                             ← rendimiento individual (tipo_rendimiento=1)
   id, actividad_id FK→actividad, trabajador_id FK→trabajador,
   cantidad DECIMAL(10,2),
-  horas_trabajadas FLOAT NOT NULL,   ← calculado automático en backend
+  horas_trabajadas FLOAT NOT NULL,      ← se precalcula al crear, editable vía PATCH
   horas_extras FLOAT NOT NULL DEFAULT 0,
+  porcentajecontratista_id FK→porcentaje_contratista NULL,
   created_at
-  (SIN observacion)
+
+rendimiento_grupal                      ← rendimiento grupal (tipo_rendimiento=2), 1:1 con actividad
+  id, actividad_id FK→actividad UNIQUE,
+  cantidad_trabajadores INT NOT NULL,
+  rendimiento_total FLOAT NOT NULL,
+  porcentajecontratista_id FK→porcentaje_contratista NULL,   ← NULL cuando es propio
+  horas_trabajadas FLOAT NOT NULL,
+  horas_extras FLOAT NOT NULL DEFAULT 0
 ```
 
 ---
@@ -137,269 +149,65 @@ El usuario puede cambiarlo si lo desea. `unidad_id` puede ser NULL (sin sugerenc
 **Labor es de empresa:** Las labores son compartidas entre todos los campos de la misma empresa.
 Filtrar por `empresa_id == current_user.empresa_id`.
 
-**horas_trabajadas en rendimiento:** Se calcula automáticamente en el backend:
+**horas_trabajadas al crear:** Se calcula automáticamente en el backend:
 ```
 horas_trabajadas = (hora_fin - hora_inicio) de la actividad en horas decimales
-horas_extras = max(0, horas_trabajadas - 8)
+horas_extras     = max(0, horas_trabajadas - 8)
 ```
-Nunca vienen del cliente. El backend los calcula y guarda.
+Nunca vienen del cliente al crear. Se calculan con `_calcular_horas(actividad)` y se guardan.
+Pueden **editarse** vía `PATCH /rendimientos/{id}` o `PATCH /rendimientos/grupal/{id}`
+enviando `horas_trabajadas` / `horas_extras` en el body.
+
+**Rendimiento grupal:** 1:1 con actividad (una fila por actividad). Solo tiene sentido cuando
+`actividad.tiporendimiento_id = 2`. En el individual hay N filas (una por trabajador).
 
 **Contratista como entidad:** Trabajadores contratistas se vinculan a una empresa contratista
 registrada en la tabla `contratista`. No es texto libre.
+
+**Máquina de estados de actividad:** `creada(1) → revisada(2) → aprobada(3) → finalizada(4)`.
+Solo se puede avanzar al siguiente orden, nunca retroceder. Solo se elimina si `estado_id == 1`.
+Solo se pueden modificar/eliminar rendimientos si la actividad está en estado 1 o 2.
+
+**Porcentaje contratista opcional en rendimientos:** Tanto `rendimiento.porcentajecontratista_id`
+como `rendimiento_grupal.porcentajecontratista_id` aceptan NULL. Es `NOT NULL` solo
+conceptualmente para actividades de contratistas (`actividad.tipopersonal_id=2`); para
+actividades de propios (`tipopersonal_id=1`) el campo debe omitirse o enviarse como null.
+
+**Permisos solo para propios:** La tabla `permiso` **únicamente aplica a trabajadores propios**
+(`trabajador.tipotrabajador_id = 1`). Los trabajadores de contratistas NO tienen permisos.
+Todos los endpoints `/permisos/*` (POST, GET lista, GET detalle, PATCH, DELETE) rechazan
+con HTTP 400 si el trabajador es contratista, y el GET de lista filtra automáticamente
+solo permisos de propios.
 
 **tipo_personal y tipo_rendimiento son FK numéricas**, no ENUMs ni strings.
 La app carga estos catálogos al iniciar sesión.
 
 ---
 
-## 3. CAMBIOS REQUERIDOS EN LA API (FastAPI)
+## 3. API ACTUAL (FastAPI, prefijo `/api/v1`)
 
-### 3.1 Modelos SQLAlchemy
+### 3.1 Modelos SQLAlchemy — ver código fuente
 
-**app/models/actividad.py — modelos completos actualizados:**
-
-```python
-# Catálogos simples
-class Estado(Base):
-    __tablename__ = "estado"
-    id:     Mapped[int] = mapped_column(Integer, primary_key=True)
-    nombre: Mapped[str] = mapped_column(String(25))
-
-class TipoPersonal(Base):
-    __tablename__ = "tipo_personal"
-    id:     Mapped[int] = mapped_column(Integer, primary_key=True)
-    nombre: Mapped[str] = mapped_column(String(25))
-
-class TipoRendimiento(Base):
-    __tablename__ = "tipo_rendimiento"
-    id:     Mapped[int] = mapped_column(Integer, primary_key=True)
-    nombre: Mapped[str] = mapped_column(String(25))
-
-class CecoTipo(Base):
-    __tablename__ = "ceco_tipo"
-    id:     Mapped[int] = mapped_column(Integer, primary_key=True)
-    nombre: Mapped[str] = mapped_column(String(45))
-
-class PorcentajeContratista(Base):
-    __tablename__ = "porcentaje_contratista"
-    id:         Mapped[int]   = mapped_column(Integer, primary_key=True)
-    porcentaje: Mapped[float] = mapped_column(Float)
-
-# UnidadMedida — catálogo global simple
-class UnidadMedida(Base):
-    __tablename__ = "unidad_medida"
-    id:     Mapped[int] = mapped_column(Integer, primary_key=True)
-    nombre: Mapped[str] = mapped_column(String(50))
-    # SIN empresa_id, SIN labor_id
-
-# Labor — de empresa, con unidad sugerida
-class Labor(Base):
-    __tablename__ = "labor"
-    id:         Mapped[int]           = mapped_column(Integer, primary_key=True)
-    empresa_id: Mapped[int]           = mapped_column(Integer, ForeignKey("empresa.id"))
-    nombre:     Mapped[str]           = mapped_column(String(100))
-    unidad_id:  Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("unidad_medida.id"), nullable=True)
-    estado_id:  Mapped[int]           = mapped_column(Integer, ForeignKey("estado.id"), default=1)
-    unidad:     Mapped[Optional["UnidadMedida"]] = relationship()
-
-# Contratista
-class Contratista(Base):
-    __tablename__ = "contratista"
-    id:        Mapped[int] = mapped_column(Integer, primary_key=True)
-    rut:       Mapped[str] = mapped_column(String(12))
-    nombre:    Mapped[str] = mapped_column(String(45))
-    campo_id:  Mapped[int] = mapped_column(Integer, ForeignKey("campo.id"))
-    estado_id: Mapped[int] = mapped_column(Integer, ForeignKey("estado.id"), default=1)
-
-# Trabajador
-class Trabajador(Base):
-    __tablename__ = "trabajador"
-    id:                       Mapped[int]           = mapped_column(Integer, primary_key=True)
-    campo_id:                 Mapped[int]           = mapped_column(Integer, ForeignKey("campo.id"))
-    nombre:                   Mapped[str]           = mapped_column(String(100))
-    rut:                      Mapped[Optional[str]] = mapped_column(String(12), nullable=True)
-    tipotrabajador_id:        Mapped[int]           = mapped_column(Integer, ForeignKey("tipo_personal.id"))
-    contratista_id:           Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("contratista.id"), nullable=True)
-    porcentajecontratista_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("porcentaje_contratista.id"), nullable=True)
-    estado_id:                Mapped[int]           = mapped_column(Integer, ForeignKey("estado.id"), default=1)
-    created_at:               Mapped[str]           = mapped_column(TIMESTAMP, server_default=func.now())
-    tipo_personal: Mapped["TipoPersonal"]                      = relationship()
-    contratista:   Mapped[Optional["Contratista"]]             = relationship()
-    porcentaje:    Mapped[Optional["PorcentajeContratista"]]   = relationship()
-
-# Ceco
-class Ceco(Base):
-    __tablename__ = "ceco"
-    id:          Mapped[int] = mapped_column(Integer, primary_key=True)
-    campo_id:    Mapped[int] = mapped_column(Integer, ForeignKey("campo.id"))
-    cecotopi_id: Mapped[int] = mapped_column(Integer, ForeignKey("ceco_tipo.id"))
-    nombre:      Mapped[str] = mapped_column(String(100))
-    estado_id:   Mapped[int] = mapped_column(Integer, ForeignKey("estado.id"), default=1)
-    ceco_tipo:   Mapped["CecoTipo"] = relationship()
-
-# Actividad
-class Actividad(Base):
-    __tablename__ = "actividad"
-    id:                 Mapped[int]            = mapped_column(Integer, primary_key=True)
-    campo_id:           Mapped[int]            = mapped_column(Integer, ForeignKey("campo.id"))
-    usuario_id:         Mapped[int]            = mapped_column(Integer, ForeignKey("usuario.id"))
-    ceco_id:            Mapped[int]            = mapped_column(Integer, ForeignKey("ceco.id"))
-    labor_id:           Mapped[int]            = mapped_column(Integer, ForeignKey("labor.id"))
-    unidad_medida_id:   Mapped[int]            = mapped_column(Integer, ForeignKey("unidad_medida.id"))
-    tipopersonal_id:    Mapped[int]            = mapped_column(Integer, ForeignKey("tipo_personal.id"))
-    tiporendimiento_id: Mapped[int]            = mapped_column(Integer, ForeignKey("tipo_rendimiento.id"))
-    fecha:              Mapped[date]           = mapped_column(Date)
-    tarifa:             Mapped[float]          = mapped_column(Numeric(10, 2))
-    hora_inicio:        Mapped[Optional[time]] = mapped_column(Time, nullable=True)
-    hora_fin:           Mapped[Optional[time]] = mapped_column(Time, nullable=True)
-    estado_id:          Mapped[int]            = mapped_column(SmallInteger, ForeignKey("estado_actividad.id"), default=1)
-    # SIN observaciones
-    estado:         Mapped["EstadoActividad"]          = relationship()
-    labor:          Mapped["Labor"]                    = relationship()
-    unidad_medida:  Mapped["UnidadMedida"]             = relationship()
-    tipo_personal:  Mapped["TipoPersonal"]             = relationship()
-    tipo_rendimiento: Mapped["TipoRendimiento"]        = relationship()
-    trabajadores:   Mapped[List["ActividadTrabajador"]] = relationship(cascade="all, delete-orphan")
-    rendimientos:   Mapped[List["Rendimiento"]]         = relationship(cascade="all, delete-orphan")
-
-# Rendimiento
-class Rendimiento(Base):
-    __tablename__ = "rendimiento"
-    id:               Mapped[int]   = mapped_column(Integer, primary_key=True)
-    actividad_id:     Mapped[int]   = mapped_column(Integer, ForeignKey("actividad.id"))
-    trabajador_id:    Mapped[int]   = mapped_column(Integer, ForeignKey("trabajador.id"))
-    cantidad:         Mapped[float] = mapped_column(Numeric(10, 2))
-    horas_trabajadas: Mapped[float] = mapped_column(Float, nullable=False)
-    horas_extras:     Mapped[float] = mapped_column(Float, default=0.0)
-    created_at:       Mapped[str]   = mapped_column(TIMESTAMP, server_default=func.now())
-    # SIN observacion
-
-# Permiso
-class Permiso(Base):
-    __tablename__ = "permiso"
-    id:               Mapped[int]   = mapped_column(Integer, primary_key=True)
-    trabajador_id:    Mapped[int]   = mapped_column(Integer, ForeignKey("trabajador.id"))
-    fecha:            Mapped[date]  = mapped_column(Date)
-    horas_permiso:    Mapped[float] = mapped_column(Float)
-    estadopermiso_id: Mapped[int]   = mapped_column(Integer, ForeignKey("estado_permiso.id"), default=1)
-```
-
-**app/models/usuario.py — cambios:**
-```python
-# Empresa: reemplazar activa BOOLEAN por estado_id
-# Campo: reemplazar activo BOOLEAN por estado_id
-# Usuario: agregar campo `usuario` VARCHAR(25), reemplazar activo por estado_id
-
-class Empresa(Base):
-    ...
-    estado_id: Mapped[int] = mapped_column(Integer, ForeignKey("estado.id"), default=1)
-    # ELIMINAR: activa: Mapped[bool]
-
-class Campo(Base):
-    ...
-    estado_id: Mapped[int] = mapped_column(Integer, ForeignKey("estado.id"), default=1)
-    # ELIMINAR: activo: Mapped[bool]
-
-class Usuario(Base):
-    ...
-    usuario:   Mapped[str] = mapped_column(String(25), nullable=False)
-    estado_id: Mapped[int] = mapped_column(Integer, ForeignKey("estado.id"), default=1)
-    # ELIMINAR: activo: Mapped[bool]
-```
+Los modelos vigentes están en:
+- `app/models/usuario.py` → `Estado`, `Rol`, `Empresa`, `Campo`, `Usuario`, `UsuarioCampo`
+- `app/models/actividad.py` → catálogos (incluye `NombreDia`) + `Labor`, `Contratista`,
+  `Trabajador`, `Ceco`, `UnidadMedida`, `HorasPorDia`, `Actividad`, `ActividadTrabajador`,
+  `Rendimiento`, `RendimientoGrupal`, `Permiso`
 
 ### 3.2 Schemas Pydantic
 
+Ubicados en `app/schemas/actividad.py` y `app/schemas/usuario.py`.
+Schemas relevantes para rendimientos:
+- `RendimientoCreate` / `RendimientoBulkCreate` — **sin** horas (se calculan)
+- `RendimientoUpdate` — permite editar `cantidad`, `horas_trabajadas`, `horas_extras`, `porcentajecontratista_id`
+- `RendimientoGrupalCreate` / `RendimientoGrupalUpdate` — mismo criterio
+- `HorasTrabajadasItem` — vista unificada individual + grupal para reportes
+
+### 3.3 Lógica de cálculo de horas
+
+En `app/routers/rendimientos.py`:
 ```python
-# Catálogos
-class UnidadMedidaResponse(BaseModel):
-    id: int; nombre: str
-    model_config = {"from_attributes": True}
-
-class LaborCreate(BaseModel):
-    empresa_id: int; nombre: str
-    unidad_id: Optional[int] = None   # unidad sugerida, puede ser None
-
-class LaborResponse(BaseModel):
-    id: int; empresa_id: int; nombre: str
-    unidad_id: Optional[int]; estado_id: int
-    unidad: Optional[UnidadMedidaResponse] = None
-    model_config = {"from_attributes": True}
-
-class ContratistaCreate(BaseModel):
-    rut: str; nombre: str; campo_id: int
-
-class ContratistaResponse(BaseModel):
-    id: int; rut: str; nombre: str; campo_id: int; estado_id: int
-    model_config = {"from_attributes": True}
-
-class TrabajadorCreate(BaseModel):
-    campo_id: int; nombre: str; rut: Optional[str] = None
-    tipotrabajador_id: int
-    contratista_id: Optional[int] = None
-    porcentajecontratista_id: Optional[int] = None
-
-class TrabajadorResponse(BaseModel):
-    id: int; campo_id: int; nombre: str; rut: Optional[str]
-    tipotrabajador_id: int; contratista_id: Optional[int]
-    porcentajecontratista_id: Optional[int]; estado_id: int
-    tipo_personal: Optional[TipoPersonalResponse] = None
-    model_config = {"from_attributes": True}
-
-class CecoCreate(BaseModel):
-    campo_id: int; cecotopi_id: int; nombre: str
-
-class CecoResponse(BaseModel):
-    id: int; campo_id: int; cecotopi_id: int; nombre: str; estado_id: int
-    model_config = {"from_attributes": True}
-
-class ActividadCreate(BaseModel):
-    campo_id: int; ceco_id: int; labor_id: int; unidad_medida_id: int
-    tipopersonal_id: int
-    tiporendimiento_id: int
-    fecha: date; tarifa: Decimal
-    hora_inicio: Optional[time] = None
-    hora_fin: Optional[time] = None
-    trabajador_ids: List[int]
-    # SIN observaciones
-
-class ActividadResponse(BaseModel):
-    id: int; campo_id: int; usuario_id: int
-    ceco_id: int; labor_id: int; unidad_medida_id: int
-    tipopersonal_id: int; tiporendimiento_id: int
-    fecha: date; tarifa: Decimal
-    hora_inicio: Optional[time]; hora_fin: Optional[time]
-    estado_id: int
-    estado: Optional[EstadoActividadResponse] = None
-    model_config = {"from_attributes": True}
-
-class RendimientoCreate(BaseModel):
-    actividad_id: int; trabajador_id: int; cantidad: Decimal
-    # SIN horas — se calculan en backend
-
-class RendimientoBulkCreate(BaseModel):
-    actividad_id: int
-    rendimientos: List[RendimientoCreate]
-
-class RendimientoResponse(BaseModel):
-    id: int; actividad_id: int; trabajador_id: int
-    cantidad: Decimal; horas_trabajadas: float; horas_extras: float
-    model_config = {"from_attributes": True}
-
-class PermisoCreate(BaseModel):
-    trabajador_id: int; fecha: date; horas_permiso: float
-
-class PermisoResponse(BaseModel):
-    id: int; trabajador_id: int; fecha: date
-    horas_permiso: float; estadopermiso_id: int
-    model_config = {"from_attributes": True}
-```
-
-### 3.3 Lógica de cálculo de horas (en routers/rendimientos.py)
-
-```python
-from datetime import datetime, date as date_type, timedelta
-
-def calcular_horas(actividad: Actividad) -> tuple[float, float]:
+def _calcular_horas(actividad: Actividad) -> tuple[float, float]:
     if actividad.hora_inicio is None or actividad.hora_fin is None:
         return 0.0, 0.0
     inicio = datetime.combine(date_type.today(), actividad.hora_inicio)
@@ -409,73 +217,129 @@ def calcular_horas(actividad: Actividad) -> tuple[float, float]:
     return round(horas, 2), round(extras, 2)
 ```
 
-### 3.4 Filtro activos — cambio global en TODOS los routers
+### 3.4 Filtro activos — regla global
 
 ```python
-# ANTES (ya no válido)
-.where(Tabla.activo == True)
-
-# AHORA en todas las queries
-.where(Tabla.estado_id == 1)
+.where(Tabla.estado_id == 1)   # NUNCA Tabla.activo == True (campo inexistente)
 ```
 
-### 3.5 Endpoints completos
+### 3.5 Endpoints implementados (prefijo `/api/v1`)
 
 ```
-# Catálogos (GET, no requieren campo_id)
-GET  /catalogos/tipos-personal
-GET  /catalogos/tipos-rendimiento
-GET  /catalogos/ceco-tipos
-GET  /catalogos/porcentajes-contratista
-GET  /unidades-medida               → lista completa (catálogo global)
+# Auth
+POST /auth/login
+GET  /auth/mis-campos
+POST /auth/seleccionar-campo/{campo_id}
 
-# Contratistas
-POST /contratistas
-GET  /contratistas?campo_id=
+# Usuarios
+POST  /usuarios
+GET   /usuarios
+GET   /usuarios/me
+PATCH /usuarios/me/clave
+GET   /usuarios/{id}
+PATCH /usuarios/{id}
 
-# Labores (de empresa, incluye unidad sugerida)
-POST /labores
-GET  /labores?empresa_id=           → incluir unidad relacionada en response
-PATCH /labores/{id}
+# Empresas / Campos / UsuarioCampo
+POST /empresas
+GET  /empresas
+GET  /empresas/{id}
+POST  /campos
+GET   /campos
+GET   /campos/{id}
+PATCH /campos/{id}
+POST   /usuario-campo
+DELETE /usuario-campo/{id}
 
-# Trabajadores
-POST /trabajadores
-GET  /trabajadores?campo_id=&tipotrabajador_id=
-PATCH /trabajadores/{id}
+# Catálogos
+GET /catalogos/tipos-personal
+GET /catalogos/tipos-rendimiento
+GET /catalogos/ceco-tipos
+GET /catalogos/porcentajes-contratista
+GET /catalogos/estados-actividad
+GET /catalogos/unidades-medida
 
-# CECOs
-POST /cecos
-GET  /cecos?campo_id=
+# Maestros — Contratistas
+POST   /contratistas
+GET    /contratistas?campo_id=
+GET    /contratistas/{id}
+PATCH  /contratistas/{id}
+DELETE /contratistas/{id}
+
+# Maestros — Trabajadores
+POST   /trabajadores
+GET    /trabajadores?campo_id=&tipotrabajador_id=
+GET    /trabajadores/{id}
+PATCH  /trabajadores/{id}
+DELETE /trabajadores/{id}
+
+# Maestros — CECOs
+POST  /cecos
+GET   /cecos?campo_id=
 PATCH /cecos/{id}
 
+# Maestros — Labores (de empresa)
+POST  /labores
+GET   /labores?empresa_id=
+PATCH /labores/{id}
+
+# Maestros — Unidades de medida (catálogo global)
+GET /unidades-medida
+
+# Configuración — Horas por día (filtra por empresa del usuario logueado)
+GET /horas-por-dia                          → incluye nombre_dia anidado
+
+# Indicadores (resúmenes diarios)
+GET /indicadores/horas-diarias-propios?campo_id=&fecha_desde=&fecha_hasta=
+    → suma horas_trabajadas de rendimiento por (trabajador, fecha)
+    → filtros: tipopersonal_id=1, actividad.estado_id=1, usuario_id=logueado
+    → compara contra horas_por_dia de la empresa (según día de la semana)
+    → devuelve: horas_esperadas, diferencia, cumple (bool)
+
+# Maestros — Permisos (SOLO trabajadores propios — tipotrabajador_id=1)
+POST   /permisos                           → 400 si el trabajador es contratista
+GET    /permisos?campo_id=&trabajador_id=  → filtra solo permisos de propios
+GET    /permisos/{id}                      → 400 si el permiso es de contratista
+PATCH  /permisos/{id}                      → 400 si el permiso es de contratista
+DELETE /permisos/{id}                      → 400 si el permiso es de contratista
+
 # Actividades
-POST  /actividades                  → body: tipopersonal_id, tiporendimiento_id (int), SIN observaciones
-GET   /actividades?campo_id=&fecha_desde=&fecha_hasta=&estado_id=
-GET   /actividades/{id}
-PATCH /actividades/{id}
-PATCH /actividades/{id}/estado
-DELETE /actividades/{id}            → solo si estado_id == 1
+POST   /actividades                         → body incluye trabajador_ids
+GET    /actividades?campo_id=&fecha_desde=&fecha_hasta=&estado_id=
+GET    /actividades/{id}
+PATCH  /actividades/{id}
+DELETE /actividades/{id}                    → solo si estado_id == 1
+POST   /actividades/{id}/trabajadores       → body: [trabajador_ids]
+DELETE /actividades/{id}/trabajadores/{trabajador_id}
+PATCH  /actividades/{id}/estado             → avanza una posición
 
-# Rendimientos (horas calculadas en backend)
-POST  /rendimientos/bulk
-POST  /rendimientos
-GET   /rendimientos?actividad_id=
-PATCH /rendimientos/{id}
-DELETE /rendimientos/{id}
+# Rendimientos individuales
+POST   /rendimientos/bulk
+POST   /rendimientos
+GET    /rendimientos?actividad_id=
+PATCH  /rendimientos/{id}                   → ahora acepta horas_trabajadas / horas_extras
+DELETE /rendimientos/{id}                   → solo si actividad.estado_id ∈ {1,2}
 
-# Permisos
-POST /permisos
-GET  /permisos?trabajador_id=
+# Rendimientos grupales
+POST   /rendimientos/grupal
+GET    /rendimientos/grupal?actividad_id=
+GET    /rendimientos/grupal/{id}
+PATCH  /rendimientos/grupal/{id}            → acepta horas_trabajadas / horas_extras
+DELETE /rendimientos/grupal/{id}            → solo si actividad.estado_id ∈ {1,2}
+
+# Reporte horas trabajadas (propios, vista unificada individual + grupal)
+GET /rendimientos/horas-trabajadas?campo_id=&fecha_desde=&fecha_hasta=
+    → filtra: campo_id + usuario logueado + tipopersonal_id=1 + actividad.estado_id=1
+    → incluye labor, ceco, hora_inicio, hora_fin
 ```
 
 ---
 
 ## 4. CAMBIOS REQUERIDOS EN FLUTTER (Drift + Providers)
 
-### 4.1 app_database.dart — tablas nuevas y modificadas
+### 4.1 app_database.dart — tablas
 
 ```dart
-// NUEVAS tablas de catálogo
+// Catálogos
 class TiposPersonal extends Table {
   IntColumn get id     => integer()();
   TextColumn get nombre => text()();
@@ -500,6 +364,14 @@ class PorcentajesContratista extends Table {
   @override Set<Column> get primaryKey => {id};
 }
 
+// UnidadesMedida — catálogo global
+class UnidadesMedida extends Table {
+  IntColumn get id     => integer()();
+  TextColumn get nombre => text()();
+  @override Set<Column> get primaryKey => {id};
+}
+
+// Contratistas
 class Contratistas extends Table {
   IntColumn get id       => integer()();
   IntColumn get campoId  => integer()();
@@ -509,25 +381,17 @@ class Contratistas extends Table {
   @override Set<Column> get primaryKey => {id};
 }
 
-// UnidadesMedida — SIMPLIFICADA (solo id + nombre, catálogo global)
-class UnidadesMedida extends Table {
-  IntColumn get id     => integer()();
-  TextColumn get nombre => text()();
-  // SIN empresaId, SIN laborId
-  @override Set<Column> get primaryKey => {id};
-}
-
-// Labores — empresaId + unidadId sugerida
+// Labores — empresa + unidad sugerida
 class Labores extends Table {
   IntColumn get id       => integer()();
   IntColumn get empresaId => integer()();
   TextColumn get nombre  => text()();
-  IntColumn get unidadId => integer().nullable()(); // ← unidad sugerida
+  IntColumn get unidadId => integer().nullable()();
   IntColumn get estadoId => integer().withDefault(const Constant(1))();
   @override Set<Column> get primaryKey => {id};
 }
 
-// Trabajadores — ids en lugar de strings
+// Trabajadores
 class Trabajadores extends Table {
   IntColumn get id                      => integer()();
   IntColumn get campoId                 => integer()();
@@ -540,7 +404,7 @@ class Trabajadores extends Table {
   @override Set<Column> get primaryKey => {id};
 }
 
-// Cecos — cecotipoId en lugar de tipo ENUM + codigo
+// Cecos — ojo: la columna se llama cecotipoId (no cecotopiId)
 class Cecos extends Table {
   IntColumn get id         => integer()();
   IntColumn get campoId    => integer()();
@@ -550,23 +414,24 @@ class Cecos extends Table {
   @override Set<Column> get primaryKey => {id};
 }
 
-// Actividades — ids para tipo, sin observaciones
+// Actividades — hora_inicio/hora_fin NOT NULL, con personal_id + cecotipo_id
 class Actividades extends Table {
   IntColumn get id                => integer().autoIncrement()();
   IntColumn get remoteId          => integer().nullable()();
   IntColumn get campoId           => integer()();
   IntColumn get usuarioId         => integer()();
   IntColumn get cecoId            => integer()();
+  IntColumn get cecotipoId        => integer()();
   IntColumn get laborId           => integer()();
   IntColumn get unidadMedidaId    => integer()();
   IntColumn get estadoId          => integer().withDefault(const Constant(1))();
   DateTimeColumn get fecha        => dateTime()();
   IntColumn get tipopersonalId    => integer()();
+  IntColumn get personalId        => integer().nullable()();
   IntColumn get tiporendimientoId => integer()();
   RealColumn get tarifa           => real()();
-  TextColumn get horaInicio       => text().nullable()();
-  TextColumn get horaFin          => text().nullable()();
-  // SIN observaciones
+  TextColumn get horaInicio       => text()();
+  TextColumn get horaFin          => text()();
   TextColumn get syncStatus       => textEnum<SyncStatus>()
       .withDefault(const Constant('pending'))();
   IntColumn get syncRetries       => integer().withDefault(const Constant(0))();
@@ -574,19 +439,34 @@ class Actividades extends Table {
   DateTimeColumn get updatedAt    => dateTime().withDefault(currentDateAndTime)();
 }
 
-// Rendimientos — con horas, sin observacion
+// Rendimientos individuales
 class Rendimientos extends Table {
-  IntColumn get id               => integer().autoIncrement()();
-  IntColumn get remoteId         => integer().nullable()();
-  IntColumn get actividadId      => integer()();
-  IntColumn get trabajadorId     => integer()();
-  RealColumn get cantidad        => real()();
-  RealColumn get horasTrabajadas => real().withDefault(const Constant(0.0))();
-  RealColumn get horasExtras     => real().withDefault(const Constant(0.0))();
-  // SIN observacion
-  TextColumn get syncStatus      => textEnum<SyncStatus>()
+  IntColumn get id                       => integer().autoIncrement()();
+  IntColumn get remoteId                 => integer().nullable()();
+  IntColumn get actividadId              => integer()();
+  IntColumn get trabajadorId             => integer()();
+  RealColumn get cantidad                => real()();
+  RealColumn get horasTrabajadas         => real().withDefault(const Constant(0.0))();
+  RealColumn get horasExtras             => real().withDefault(const Constant(0.0))();
+  IntColumn get porcentajecontratistaId  => integer().nullable()();
+  TextColumn get syncStatus              => textEnum<SyncStatus>()
       .withDefault(const Constant('pending'))();
-  DateTimeColumn get createdAt   => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get createdAt           => dateTime().withDefault(currentDateAndTime)();
+}
+
+// Rendimientos grupales (1:1 con actividad)
+class RendimientosGrupales extends Table {
+  IntColumn get id                       => integer().autoIncrement()();
+  IntColumn get remoteId                 => integer().nullable()();
+  IntColumn get actividadId              => integer()();
+  IntColumn get cantidadTrabajadores     => integer()();
+  RealColumn get rendimientoTotal        => real()();
+  IntColumn get porcentajecontratistaId  => integer()();
+  RealColumn get horasTrabajadas         => real()();
+  RealColumn get horasExtras             => real().withDefault(const Constant(0.0))();
+  TextColumn get syncStatus              => textEnum<SyncStatus>()
+      .withDefault(const Constant('pending'))();
+  DateTimeColumn get createdAt           => dateTime().withDefault(currentDateAndTime)();
 }
 ```
 
@@ -596,42 +476,46 @@ class Rendimientos extends Table {
 @DriftDatabase(tables: [
   // Catálogos
   TiposPersonal, TiposRendimiento, CecoTipos, PorcentajesContratista, EstadosActividad,
+  UnidadesMedida,
   // Tenant
   Empresas, Campos, Usuarios,
   // Maestros
-  Contratistas, Trabajadores, Cecos, Labores, UnidadesMedida,
+  Contratistas, Trabajadores, Cecos, Labores, Permisos,
   // Transaccional
-  Actividades, ActividadTrabajadores, Rendimientos,
+  Actividades, ActividadTrabajadores, Rendimientos, RendimientosGrupales,
 ])
 ```
 
-Incrementar `schemaVersion` a 2 y agregar migración que recrea las tablas modificadas.
+Incrementar `schemaVersion` y agregar migración que recrea las tablas modificadas
+e incorpora `rendimientos_grupales`.
 
-### 4.3 Providers a actualizar
+### 4.3 Providers
 
 ```dart
-// Filtros de activo — cambiar en TODOS los providers
-// ANTES: .where((t) => t.activo.equals(true))
-// AHORA: .where((t) => t.estadoId.equals(1))
+// Filtro activo → estadoId == 1 en todos los providers
+.where((t) => t.estadoId.equals(1))
 
-// Providers nuevos necesarios
-tiposPersonalProvider          → StreamProvider<List<TiposPersonalData>>
-tiposRendimientoProvider       → StreamProvider<List<TiposRendimientoData>>
-cecoTiposProvider              → StreamProvider<List<CecoTiposData>>
-contratistasProvider(campoId)  → StreamProvider filtrado por campo y estado=1
-unidadesMedidaProvider         → StreamProvider<List<UnidadesMedidaData>> (todo el catálogo)
+// Providers catálogo (cargan en login)
+tiposPersonalProvider, tiposRendimientoProvider, cecoTiposProvider,
+porcentajesContratistaProvider, unidadesMedidaProvider
 
-// Providers modificados
-laboresProvider(empresaId)     // ← antes laborProvider(campoId)
-trabajadoresProvider(campoId, tipotrabajadorId) // ← antes tipo era string
-cecosProvider(campoId)         // sin cambios en firma
+// Providers de maestros
+contratistasProvider(campoId)
+trabajadoresProvider(campoId, tipotrabajadorId?)
+cecosProvider(campoId)
+laboresProvider(empresaId)
+permisosProvider(trabajadorId)
+
+// Providers transaccionales
+actividadesProvider(campoId, filtros)
+rendimientosProvider(actividadId)
+rendimientoGrupalProvider(actividadId)    // nuevo
 ```
 
-### 4.4 Lógica de horas en Flutter (para registro local offline)
+### 4.4 Lógica de horas en Flutter (registro local offline)
 
 ```dart
-double calcularHorasTrabajadas(String? horaInicio, String? horaFin) {
-  if (horaInicio == null || horaFin == null) return 0.0;
+double calcularHorasTrabajadas(String horaInicio, String horaFin) {
   final pi = horaInicio.split(':');
   final pf = horaFin.split(':');
   final ini = Duration(hours: int.parse(pi[0]), minutes: int.parse(pi[1]));
@@ -644,48 +528,65 @@ double calcularHorasExtras(double horasTrabajadas) =>
     (horasTrabajadas - 8.0).clamp(0.0, 24.0);
 ```
 
-### 4.5 Flujo UX CrearActividad — actualizado
+### 4.5 Flujo UX CrearActividad
 
 ```
-1. tipopersonal_id  → dropdown desde tiposPersonalProvider
-2. CECO             → dropdown desde cecosProvider(campoId) — muestra nombre
-3. labor_id         → dropdown desde laboresProvider(empresaId)
-                      al seleccionar → precargar unidad_medida_id con labor.unidadId
-                      (si labor.unidadId != null)
-4. unidad_medida_id → dropdown desde unidadesMedidaProvider
-                      (precargado por paso 3, editable)
+1. tipopersonal_id    → dropdown desde tiposPersonalProvider
+2. ceco_id            → dropdown desde cecosProvider(campoId)
+                        (al seleccionar, el backend toma cecotipo_id desde ceco.cecotipo_id)
+3. labor_id           → dropdown desde laboresProvider(empresaId)
+                        al seleccionar → precargar unidad_medida_id con labor.unidadId
+4. unidad_medida_id   → dropdown desde unidadesMedidaProvider (precargado, editable)
 5. tiporendimiento_id → dropdown desde tiposRendimientoProvider
-6. tarifa           → campo numérico
-7. fecha            → DatePicker
-8. hora_inicio / hora_fin → TimePicker (opcionales)
-9. trabajadores     → multi-select filtrado por tipotrabajadorId == tipopersonal_id
+6. tarifa             → campo numérico
+7. fecha              → DatePicker
+8. hora_inicio / hora_fin → TimePicker (OBLIGATORIOS, NOT NULL en BD)
+9. trabajadores       → multi-select filtrado por tipotrabajadorId == tipopersonal_id
 ```
 
 ### 4.6 Sincronización de catálogos al login
 
 ```dart
-// Después de setSession() exitoso en AuthNotifier:
 await Future.wait([
-  _sincronizarCatalogo('/catalogos/tipos-personal',    db.tiposPersonal),
-  _sincronizarCatalogo('/catalogos/tipos-rendimiento', db.tiposRendimiento),
-  _sincronizarCatalogo('/catalogos/ceco-tipos',        db.cecoTipos),
+  _sincronizarCatalogo('/catalogos/tipos-personal',          db.tiposPersonal),
+  _sincronizarCatalogo('/catalogos/tipos-rendimiento',       db.tiposRendimiento),
+  _sincronizarCatalogo('/catalogos/ceco-tipos',              db.cecoTipos),
   _sincronizarCatalogo('/catalogos/porcentajes-contratista', db.porcentajesContratista),
-  _sincronizarCatalogo('/unidades-medida',             db.unidadesMedida),
-  _sincronizarLabores('/labores?empresa_id=$empresaId', db.labores),
+  _sincronizarCatalogo('/catalogos/estados-actividad',       db.estadosActividad),
+  _sincronizarCatalogo('/catalogos/unidades-medida',         db.unidadesMedida),
+  _sincronizarLabores('/labores?empresa_id=$empresaId',      db.labores),
 ]);
 // Luego, ya con campo seleccionado:
-_sincronizarMaestrosCampo(campoId);  // trabajadores, cecos, contratistas
+_sincronizarMaestrosCampo(campoId);  // trabajadores, cecos, contratistas, permisos
 ```
 
 ---
 
 ## 5. NOTAS FINALES PARA CLAUDE CODE
 
-- `activo` no existe en ninguna tabla — siempre usar `estado_id = 1` para activos
-- `unidad_medida` es catálogo global: solo `id` y `nombre`, sin FKs de empresa o labor
-- `labor.unidad_id` es la sugerencia de unidad — puede ser NULL, y el usuario puede cambiarla
-- `horas_trabajadas` y `horas_extras` NUNCA vienen del cliente, siempre calculados en backend
-- `observaciones` (actividad) y `observacion` (rendimiento) no existen en la BD real
-- `tipo_personal` y `tipo_rendimiento` son IDs enteros, no strings ni ENUMs
-- Al hacer `build_runner build`, incrementar `schemaVersion` a 2 en AppDatabase
-- En todos los routers FastAPI, los filtros de "activo" usan `estado_id == 1`
+- `activo` no existe en ninguna tabla — siempre usar `estado_id = 1` para activos.
+- `unidad_medida` es catálogo global: solo `id` y `nombre`, sin FKs de empresa o labor.
+- `labor.unidad_id` es sugerencia — puede ser NULL, el usuario puede cambiarla.
+- `actividad.hora_inicio` y `actividad.hora_fin` son **NOT NULL** (TIME obligatorio).
+- `actividad.cecotipo_id` se guarda denormalizado desde `ceco.cecotipo_id` al crear.
+- `actividad.personal_id` es el `contratista_id` asignado; NULL si `tipopersonal_id=1` (propio).
+- `horas_trabajadas` y `horas_extras` se **calculan** al crear rendimiento/rendimiento_grupal,
+  pero pueden **editarse** vía PATCH — útil para ajustes manuales por parte del supervisor.
+- `rendimiento` (individual, N por actividad) y `rendimiento_grupal` (1:1 con actividad) coexisten;
+  el tipo depende de `actividad.tiporendimiento_id` (1=individual, 2=grupal).
+- `tipo_personal` y `tipo_rendimiento` son IDs enteros, no strings ni ENUMs.
+- En todos los routers FastAPI, los filtros de "activo" usan `estado_id == 1`.
+- Rendimientos solo se pueden modificar/eliminar si la actividad está en estado 1 (creada) o 2 (revisada).
+- La actividad solo se elimina si `estado_id == 1`.
+- Reporte de horas trabajadas (`GET /rendimientos/horas-trabajadas`) filtra además por
+  `tipopersonal_id=1` (propios) y `actividad.estado_id=1` (creada), y por `usuario_id`
+  del usuario logueado.
+- `horas_por_dia` configura las horas de jornada por día de la semana a nivel empresa
+  (referencia `nombre_dia` como catálogo de días). El endpoint `GET /horas-por-dia`
+  filtra automáticamente por la empresa del usuario logueado.
+- Convención de `nombre_dia.id`: **1=lunes, 2=martes, ..., 7=domingo** (coincide con
+  `date.isoweekday()` de Python).
+- Indicadores: el resumen diario de horas trabajadas (propios) se calcula en la API, no
+  en una vista MySQL — agrega `rendimiento` por `trabajador_id + fecha`, cruza con
+  `horas_por_dia` según día de la semana y marca `cumple` cuando el total del día no
+  excede las horas configuradas.

@@ -52,6 +52,21 @@ class EstadoPermiso(Base):
     nombre: Mapped[str] = mapped_column(String(25), nullable=False)
 
 
+class NombreDia(Base):
+    __tablename__ = "nombre_dia"
+    id:     Mapped[int] = mapped_column(Integer, primary_key=True)
+    nombre: Mapped[str] = mapped_column("nombre_dia", String(10), nullable=False)
+
+
+class HorasPorDia(Base):
+    __tablename__ = "horas_por_dia"
+    id:            Mapped[int]   = mapped_column(Integer, primary_key=True, autoincrement=True)
+    empresa_id:    Mapped[int]   = mapped_column(Integer, ForeignKey("empresa.id"), nullable=False)
+    nombredia_id:  Mapped[int]   = mapped_column(Integer, ForeignKey("nombre_dia.id"), nullable=False)
+    horas_dias:    Mapped[float] = mapped_column(Float, nullable=False)
+    nombre_dia: Mapped["NombreDia"] = relationship()
+
+
 # ---------------------------------------------------------------
 # Maestros
 # ---------------------------------------------------------------
@@ -179,11 +194,11 @@ class RendimientoGrupal(Base):
     actividad_id:             Mapped[int]   = mapped_column(Integer, ForeignKey("actividad.id"), nullable=False)
     cantidad_trabajadores:    Mapped[int]   = mapped_column(Integer, nullable=False)
     rendimiento_total:        Mapped[float] = mapped_column(Float, nullable=False)
-    porcentajecontratista_id: Mapped[int]   = mapped_column(Integer, ForeignKey("porcentaje_contratista.id"), nullable=False)
+    porcentajecontratista_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("porcentaje_contratista.id"), nullable=True)
     horas_trabajadas:         Mapped[float] = mapped_column(Float, nullable=False)
     horas_extras:             Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    actividad:  Mapped["Actividad"]             = relationship(back_populates="rendimiento_grupal")
-    porcentaje: Mapped["PorcentajeContratista"] = relationship()
+    actividad:  Mapped["Actividad"]                       = relationship(back_populates="rendimiento_grupal")
+    porcentaje: Mapped[Optional["PorcentajeContratista"]] = relationship()
 
 
 class Permiso(Base):

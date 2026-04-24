@@ -245,6 +245,8 @@ class RendimientoBulkCreate(BaseModel):
 
 class RendimientoUpdate(BaseModel):
     cantidad:                 Optional[Decimal] = None
+    horas_trabajadas:         Optional[float]   = None
+    horas_extras:             Optional[float]   = None
     porcentajecontratista_id: Optional[int]     = None
 
 
@@ -268,12 +270,14 @@ class RendimientoGrupalCreate(BaseModel):
     actividad_id:             int
     cantidad_trabajadores:    int
     rendimiento_total:        float
-    porcentajecontratista_id: int
+    porcentajecontratista_id: Optional[int] = None
 
 
 class RendimientoGrupalUpdate(BaseModel):
     cantidad_trabajadores:    Optional[int]   = None
     rendimiento_total:        Optional[float] = None
+    horas_trabajadas:         Optional[float] = None
+    horas_extras:             Optional[float] = None
     porcentajecontratista_id: Optional[int]   = None
 
 
@@ -282,7 +286,7 @@ class RendimientoGrupalResponse(BaseModel):
     actividad_id:             int
     cantidad_trabajadores:    int
     rendimiento_total:        float
-    porcentajecontratista_id: int
+    porcentajecontratista_id: Optional[int] = None
     horas_trabajadas:         float
     horas_extras:             float
     model_config = {"from_attributes": True}
@@ -325,3 +329,67 @@ class PermisoResponse(BaseModel):
     trabajador:       Optional[TrabajadorSimpleResponse] = None
     estado_permiso:   Optional[EstadoPermisoResponse]   = None
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------
+# Horas trabajadas (vista unificada individual + grupal)
+# ---------------------------------------------------------------
+
+class HorasTrabajadasItem(BaseModel):
+    tipo:                  str                 # "individual" | "grupal"
+    rendimiento_id:        int
+    actividad_id:          int
+    fecha:                 date
+    hora_inicio:           time
+    hora_fin:              time
+    labor_id:              int
+    labor_nombre:          str
+    ceco_id:               int
+    ceco_nombre:           str
+    trabajador_id:         Optional[int] = None
+    trabajador_nombre:     Optional[str] = None
+    trabajador_rut:        Optional[str] = None
+    cantidad_trabajadores: Optional[int] = None
+    horas_trabajadas:      float
+    horas_extras:          float
+
+
+class HorasTrabajadasUpdate(BaseModel):
+    horas_trabajadas: Optional[float] = None
+    horas_extras:     Optional[float] = None
+
+
+# ---------------------------------------------------------------
+# Horas por día (configuración de jornada por empresa)
+# ---------------------------------------------------------------
+
+class NombreDiaResponse(BaseModel):
+    id:     int
+    nombre: str
+    model_config = {"from_attributes": True}
+
+
+class HorasPorDiaResponse(BaseModel):
+    id:           int
+    empresa_id:   int
+    nombredia_id: int
+    horas_dias:   float
+    nombre_dia:   Optional[NombreDiaResponse] = None
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------
+# Indicadores
+# ---------------------------------------------------------------
+
+class IndicadorHorasDiariasPropio(BaseModel):
+    trabajador_id:         int
+    trabajador_nombre:     str
+    trabajador_rut:        Optional[str] = None
+    fecha:                 date
+    nombredia_id:          int
+    horas_trabajadas:      float
+    horas_extras:          float
+    horas_esperadas:       Optional[float] = None
+    diferencia:            Optional[float] = None
+    cumple:                Optional[bool]  = None
