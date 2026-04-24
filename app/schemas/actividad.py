@@ -388,8 +388,12 @@ class IndicadorHorasDiariasPropio(BaseModel):
     trabajador_rut:        Optional[str] = None
     fecha:                 date
     nombredia_id:          int
-    horas_trabajadas:      float
-    horas_extras:          float
+    horas_individual:      float                      # suma de rendimiento individual
+    horas_grupal:          float                      # suma de rendimiento_grupal expandido
+    horas_trabajadas:      float                      # individual + grupal
+    horas_permiso:         float                      # suma de permiso.horas_permiso
+    total_horas:           float                      # horas_trabajadas + horas_permiso
+    horas_extras:          float                      # no se usa en la app (siempre 0)
     horas_esperadas:       Optional[float] = None
-    diferencia:            Optional[float] = None
-    cumple:                Optional[bool]  = None
+    diferencia:            Optional[float] = None     # total_horas - horas_esperadas
+    cumple:                Optional[bool]  = None     # total_horas <= horas_esperadas

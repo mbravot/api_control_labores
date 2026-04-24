@@ -290,10 +290,17 @@ GET /horas-por-dia                          → incluye nombre_dia anidado
 
 # Indicadores (resúmenes diarios)
 GET /indicadores/horas-diarias-propios?campo_id=&fecha_desde=&fecha_hasta=
-    → suma horas_trabajadas de rendimiento por (trabajador, fecha)
-    → filtros: tipopersonal_id=1, actividad.estado_id=1, usuario_id=logueado
-    → compara contra horas_por_dia de la empresa (según día de la semana)
-    → devuelve: horas_esperadas, diferencia, cumple (bool)
+    → agrega por (trabajador, fecha) tres fuentes:
+        - horas_individual: suma de rendimiento.horas_trabajadas
+        - horas_grupal: rendimiento_grupal.horas_trabajadas expandido por cada
+          trabajador de actividad_trabajador
+        - horas_permiso: suma de permiso.horas_permiso (propios del campo)
+    → filtros actividades: tipopersonal_id=1, estado_id=1, usuario_id=logueado
+    → filtros permisos: trabajador.campo_id=campo_id y tipotrabajador_id=1
+    → compara total_horas (= trabajadas + permiso) contra horas_por_dia
+      de la empresa según el día de la semana
+    → devuelve: horas_individual, horas_grupal, horas_trabajadas,
+      horas_permiso, total_horas, horas_esperadas, diferencia, cumple
 
 # Maestros — Permisos (SOLO trabajadores propios — tipotrabajador_id=1)
 POST   /permisos                           → 400 si el trabajador es contratista
@@ -586,7 +593,12 @@ _sincronizarMaestrosCampo(campoId);  // trabajadores, cecos, contratistas, permi
   filtra automáticamente por la empresa del usuario logueado.
 - Convención de `nombre_dia.id`: **1=lunes, 2=martes, ..., 7=domingo** (coincide con
   `date.isoweekday()` de Python).
-- Indicadores: el resumen diario de horas trabajadas (propios) se calcula en la API, no
-  en una vista MySQL — agrega `rendimiento` por `trabajador_id + fecha`, cruza con
-  `horas_por_dia` según día de la semana y marca `cumple` cuando el total del día no
-  excede las horas configuradas.
+- Indicadores: el resumen diario de horas (propios) se calcula en la API, no en una vista
+  MySQL. Suma tres fuentes por `(trabajador_id, fecha)`:
+    1. `rendimiento.horas_trabajadas` (individuales)
+    2. `rendimiento_grupal.horas_trabajadas` expandido por cada trabajador en
+       `actividad_trabajador` (cada asignado recibe el total del grupal)
+    3. `permiso.horas_permiso` de los trabajadores propios del campo
+  El flag `cumple` compara `total_horas = trabajadas + permiso` contra `horas_por_dia`
+  según el día de la semana. Si el día no tiene config, `cumple` y `horas_esperadas`
+  vienen `null`.
