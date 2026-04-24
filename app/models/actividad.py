@@ -146,6 +146,7 @@ class Actividad(Base):
     estado:           Mapped["EstadoActividad"]           = relationship(back_populates="actividades")
     trabajadores:     Mapped[List["ActividadTrabajador"]] = relationship(back_populates="actividad", cascade="all, delete-orphan")
     rendimientos:     Mapped[List["Rendimiento"]]         = relationship(back_populates="actividad", cascade="all, delete-orphan")
+    rendimiento_grupal: Mapped[Optional["RendimientoGrupal"]] = relationship(back_populates="actividad", uselist=False, cascade="all, delete-orphan")
 
 
 class ActividadTrabajador(Base):
@@ -159,27 +160,30 @@ class ActividadTrabajador(Base):
 
 class Rendimiento(Base):
     __tablename__ = "rendimiento"
-    id:               Mapped[int]   = mapped_column(Integer, primary_key=True, autoincrement=True)
-    actividad_id:     Mapped[int]   = mapped_column(Integer, ForeignKey("actividad.id"), nullable=False)
-    trabajador_id:    Mapped[int]   = mapped_column(Integer, ForeignKey("trabajador.id"), nullable=False)
-    cantidad:         Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
-    horas_trabajadas: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    horas_extras:     Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    created_at:       Mapped[Optional[str]] = mapped_column(TIMESTAMP, server_default=func.now())
-    actividad:  Mapped["Actividad"]  = relationship(back_populates="rendimientos")
-    trabajador: Mapped["Trabajador"] = relationship(back_populates="rendimientos")
-    grupal:     Mapped[Optional["RendimientoGrupal"]] = relationship(back_populates="rendimiento", uselist=False, cascade="all, delete-orphan")
+    id:                       Mapped[int]   = mapped_column(Integer, primary_key=True, autoincrement=True)
+    actividad_id:             Mapped[int]   = mapped_column(Integer, ForeignKey("actividad.id"), nullable=False)
+    trabajador_id:            Mapped[int]   = mapped_column(Integer, ForeignKey("trabajador.id"), nullable=False)
+    cantidad:                 Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    horas_trabajadas:         Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    horas_extras:             Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    porcentajecontratista_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("porcentaje_contratista.id"), nullable=True)
+    created_at:               Mapped[Optional[str]] = mapped_column(TIMESTAMP, server_default=func.now())
+    actividad:  Mapped["Actividad"]                    = relationship(back_populates="rendimientos")
+    trabajador: Mapped["Trabajador"]                   = relationship(back_populates="rendimientos")
+    porcentaje: Mapped[Optional["PorcentajeContratista"]] = relationship()
 
 
 class RendimientoGrupal(Base):
     __tablename__ = "rendimiento_grupal"
     id:                       Mapped[int]   = mapped_column(Integer, primary_key=True, autoincrement=True)
-    rendimiento_id:           Mapped[int]   = mapped_column(Integer, ForeignKey("rendimiento.id"), nullable=False)
+    actividad_id:             Mapped[int]   = mapped_column(Integer, ForeignKey("actividad.id"), nullable=False)
     cantidad_trabajadores:    Mapped[int]   = mapped_column(Integer, nullable=False)
     rendimiento_total:        Mapped[float] = mapped_column(Float, nullable=False)
     porcentajecontratista_id: Mapped[int]   = mapped_column(Integer, ForeignKey("porcentaje_contratista.id"), nullable=False)
-    rendimiento: Mapped["Rendimiento"]           = relationship(back_populates="grupal")
-    porcentaje:  Mapped["PorcentajeContratista"] = relationship()
+    horas_trabajadas:         Mapped[float] = mapped_column(Float, nullable=False)
+    horas_extras:             Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    actividad:  Mapped["Actividad"]             = relationship(back_populates="rendimiento_grupal")
+    porcentaje: Mapped["PorcentajeContratista"] = relationship()
 
 
 class Permiso(Base):

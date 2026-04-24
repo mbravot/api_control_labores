@@ -62,6 +62,7 @@ async def crear_rendimientos_bulk(
             cantidad=item.cantidad,
             horas_trabajadas=horas_trabajadas,
             horas_extras=horas_extras,
+            porcentajecontratista_id=item.porcentajecontratista_id,
         )
         db.add(rendimiento)
         creados.append(rendimiento)
@@ -104,6 +105,7 @@ async def crear_rendimiento(
         cantidad=payload.cantidad,
         horas_trabajadas=horas_trabajadas,
         horas_extras=horas_extras,
+        porcentajecontratista_id=payload.porcentajecontratista_id,
     )
     db.add(rendimiento)
     await db.flush()
@@ -147,23 +149,26 @@ async def crear_rendimiento_grupal(
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    rendimiento = await _get_rendimiento(payload.rendimiento_id, db)
-    await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+    actividad = await _get_actividad_con_acceso(payload.actividad_id, current_user, db)
 
     existente = await db.execute(
-        select(RendimientoGrupal).where(RendimientoGrupal.rendimiento_id == payload.rendimiento_id)
+        select(RendimientoGrupal).where(RendimientoGrupal.actividad_id == payload.actividad_id)
     )
     if existente.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Ya existe un rendimiento grupal para este rendimiento",
+            detail="Ya existe un rendimiento grupal para esta actividad",
         )
 
+    horas_trabajadas, horas_extras = _calcular_horas(actividad)
+
     grupal = RendimientoGrupal(
-        rendimiento_id=payload.rendimiento_id,
+        actividad_id=payload.actividad_id,
         cantidad_trabajadores=payload.cantidad_trabajadores,
         rendimiento_total=payload.rendimiento_total,
         porcentajecontratista_id=payload.porcentajecontratista_id,
+        horas_trabajadas=horas_trabajadas,
+        horas_extras=horas_extras,
     )
     db.add(grupal)
     await db.flush()
@@ -172,20 +177,19 @@ async def crear_rendimiento_grupal(
 
 
 # ---------------------------------------------------------------
-# GET /rendimientos/grupal?rendimiento_id=
+# GET /rendimientos/grupal?actividad_id=
 # ---------------------------------------------------------------
 
 @router.get("/grupal", response_model=RendimientoGrupalResponse)
-async def obtener_rendimiento_grupal_por_rendimiento(
-    rendimiento_id: int = Query(...),
+async def obtener_rendimiento_grupal_por_actividad(
+    actividad_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    rendimiento = await _get_rendimiento(rendimiento_id, db)
-    await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+    await _get_actividad_con_acceso(actividad_id, current_user, db)
 
     result = await db.execute(
-        select(RendimientoGrupal).where(RendimientoGrupal.rendimiento_id == rendimiento_id)
+        select(RendimientoGrupal).where(RendimientoGrupal.actividad_id == actividad_id)
     )
     grupal = result.scalar_one_or_none()
     if grupal is None:
@@ -204,8 +208,7 @@ async def obtener_rendimiento_grupal(
     current_user: Usuario = Depends(get_current_active_user),
 ):
     grupal = await _get_grupal(grupal_id, db)
-    rendimiento = await _get_rendimiento(grupal.rendimiento_id, db)
-    await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+    await _get_actividad_con_acceso(grupal.actividad_id, current_user, db)
     return grupal
 
 
@@ -221,8 +224,7 @@ async def actualizar_rendimiento_grupal(
     current_user: Usuario = Depends(get_current_active_user),
 ):
     grupal = await _get_grupal(grupal_id, db)
-    rendimiento = await _get_rendimiento(grupal.rendimiento_id, db)
-    actividad = await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+    actividad = await _get_actividad_con_acceso(grupal.actividad_id, current_user, db)
 
     if actividad.estado_id not in (1, 2):
         raise HTTPException(
@@ -248,8 +250,7 @@ async def eliminar_rendimiento_grupal(
     current_user: Usuario = Depends(get_current_active_user),
 ):
     grupal = await _get_grupal(grupal_id, db)
-    rendimiento = await _get_rendimiento(grupal.rendimiento_id, db)
-    actividad = await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+    actividad = await _get_actividad_con_acceso(grupal.actividad_id, current_user, db)
 
     if actividad.estado_id not in (1, 2):
         raise HTTPException(

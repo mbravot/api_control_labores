@@ -232,9 +232,10 @@ class ActividadTrabajadorResponse(BaseModel):
 # ---------------------------------------------------------------
 
 class RendimientoCreate(BaseModel):
-    actividad_id:  int
-    trabajador_id: int
-    cantidad:      Decimal
+    actividad_id:             int
+    trabajador_id:            int
+    cantidad:                 Decimal
+    porcentajecontratista_id: Optional[int] = None
 
 
 class RendimientoBulkCreate(BaseModel):
@@ -243,17 +244,19 @@ class RendimientoBulkCreate(BaseModel):
 
 
 class RendimientoUpdate(BaseModel):
-    cantidad: Optional[Decimal] = None
+    cantidad:                 Optional[Decimal] = None
+    porcentajecontratista_id: Optional[int]     = None
 
 
 class RendimientoResponse(BaseModel):
-    id:               int
-    actividad_id:     int
-    trabajador_id:    int
-    cantidad:         Decimal
-    horas_trabajadas: float
-    horas_extras:     float
-    trabajador:       Optional[TrabajadorResponse] = None
+    id:                       int
+    actividad_id:             int
+    trabajador_id:            int
+    cantidad:                 Decimal
+    horas_trabajadas:         float
+    horas_extras:             float
+    porcentajecontratista_id: Optional[int] = None
+    trabajador:               Optional[TrabajadorResponse] = None
     model_config = {"from_attributes": True}
 
 
@@ -262,7 +265,7 @@ class RendimientoResponse(BaseModel):
 # ---------------------------------------------------------------
 
 class RendimientoGrupalCreate(BaseModel):
-    rendimiento_id:           int
+    actividad_id:             int
     cantidad_trabajadores:    int
     rendimiento_total:        float
     porcentajecontratista_id: int
@@ -276,10 +279,12 @@ class RendimientoGrupalUpdate(BaseModel):
 
 class RendimientoGrupalResponse(BaseModel):
     id:                       int
-    rendimiento_id:           int
+    actividad_id:             int
     cantidad_trabajadores:    int
     rendimiento_total:        float
     porcentajecontratista_id: int
+    horas_trabajadas:         float
+    horas_extras:             float
     model_config = {"from_attributes": True}
 
 
