@@ -4,6 +4,7 @@ from datetime import date as date_type
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user, verify_campo_access
@@ -12,7 +13,12 @@ from app.models.actividad import (
     Actividad, ActividadTrabajador, Rendimiento, RendimientoGrupal,
     Trabajador, HorasPorDia, Permiso,
 )
-from app.schemas.actividad import IndicadorHorasDiariasPropio
+from app.schemas.actividad import (
+    IndicadorHorasDiariasPropio,
+    IndicadorRendimientoFecha,
+    IndicadorRendimientoActividad,
+    IndicadorRendimientoTrabajador,
+)
 
 router = APIRouter(prefix="/indicadores", tags=["Indicadores"])
 
@@ -164,3 +170,112 @@ async def horas_diarias_propios(
     items.sort(key=lambda x: (x.fecha, x.trabajador_nombre), reverse=False)
     items.sort(key=lambda x: x.fecha, reverse=True)
     return items
+
+
+# ---------------------------------------------------------------
+# GET /indicadores/rendimientos?campo_id=
+#   Resumen de rendimientos agrupado por fecha → actividad → trabajador
+#   Incluye propios y contratistas, actividades en estado=1 (creada)
+# ---------------------------------------------------------------
+
+@router.get("/rendimientos", response_model=List[IndicadorRendimientoFecha])
+async def indicador_rendimientos(
+    campo_id: int = Query(...),
+    fecha_desde: Optional[date_type] = Query(None),
+    fecha_hasta: Optional[date_type] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    await verify_campo_access(campo_id, current_user, db)
+
+    filtros = [
+        Actividad.campo_id == campo_id,
+        Actividad.usuario_id == current_user.id,
+        Actividad.estado_id == 1,
+    ]
+    if fecha_desde:
+        filtros.append(Actividad.fecha >= fecha_desde)
+    if fecha_hasta:
+        filtros.append(Actividad.fecha <= fecha_hasta)
+
+    stmt = (
+        select(Actividad)
+        .options(
+            selectinload(Actividad.labor),
+            selectinload(Actividad.ceco),
+            selectinload(Actividad.unidad_medida),
+            selectinload(Actividad.rendimientos).selectinload(Rendimiento.trabajador),
+            selectinload(Actividad.rendimiento_grupal),
+            selectinload(Actividad.trabajadores).selectinload(ActividadTrabajador.trabajador),
+        )
+        .where(*filtros)
+        .order_by(Actividad.fecha.desc(), Actividad.hora_inicio, Actividad.id)
+    )
+    res = await db.execute(stmt)
+    actividades = res.scalars().unique().all()
+
+    por_fecha: dict[date_type, List[IndicadorRendimientoActividad]] = {}
+
+    for a in actividades:
+        trabajadores_items: List[IndicadorRendimientoTrabajador] = []
+        cantidad_total = 0.0
+
+        if a.tiporendimiento_id == 1:
+            # Individual: una fila por cada rendimiento, con su trabajador
+            for r in a.rendimientos:
+                if r.trabajador is None:
+                    continue
+                cant = float(r.cantidad or 0.0)
+                cantidad_total += cant
+                trabajadores_items.append(IndicadorRendimientoTrabajador(
+                    trabajador_id=r.trabajador.id,
+                    trabajador_nombre=r.trabajador.nombre,
+                    trabajador_rut=r.trabajador.rut,
+                    tipotrabajador_id=r.trabajador.tipotrabajador_id,
+                    cantidad=round(cant, 2),
+                ))
+        else:
+            # Grupal: distribuye rendimiento_total entre los trabajadores asignados
+            g = a.rendimiento_grupal
+            if g is not None:
+                cantidad_total = float(g.rendimiento_total or 0.0)
+                cuenta = g.cantidad_trabajadores or 0
+                por_trabajador = round(cantidad_total / cuenta, 2) if cuenta > 0 else 0.0
+                for at in a.trabajadores:
+                    if at.trabajador is None:
+                        continue
+                    trabajadores_items.append(IndicadorRendimientoTrabajador(
+                        trabajador_id=at.trabajador.id,
+                        trabajador_nombre=at.trabajador.nombre,
+                        trabajador_rut=at.trabajador.rut,
+                        tipotrabajador_id=at.trabajador.tipotrabajador_id,
+                        cantidad=por_trabajador,
+                    ))
+
+        # Omitir actividades sin rendimientos registrados
+        if not trabajadores_items and cantidad_total == 0.0:
+            continue
+
+        trabajadores_items.sort(key=lambda t: t.trabajador_nombre)
+
+        act_item = IndicadorRendimientoActividad(
+            actividad_id=a.id,
+            labor_id=a.labor.id,
+            labor_nombre=a.labor.nombre,
+            ceco_id=a.ceco.id,
+            ceco_nombre=a.ceco.nombre,
+            hora_inicio=a.hora_inicio,
+            hora_fin=a.hora_fin,
+            unidad_medida_id=a.unidad_medida.id,
+            unidad_nombre=a.unidad_medida.nombre,
+            tipopersonal_id=a.tipopersonal_id,
+            tiporendimiento_id=a.tiporendimiento_id,
+            cantidad_total=round(cantidad_total, 2),
+            trabajadores=trabajadores_items,
+        )
+        por_fecha.setdefault(a.fecha, []).append(act_item)
+
+    return [
+        IndicadorRendimientoFecha(fecha=f, actividades=acts)
+        for f, acts in sorted(por_fecha.items(), reverse=True)
+    ]

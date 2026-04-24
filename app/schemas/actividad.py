@@ -397,3 +397,32 @@ class IndicadorHorasDiariasPropio(BaseModel):
     horas_esperadas:       Optional[float] = None
     diferencia:            Optional[float] = None     # total_horas - horas_esperadas
     cumple:                Optional[bool]  = None     # total_horas <= horas_esperadas
+
+
+class IndicadorRendimientoTrabajador(BaseModel):
+    trabajador_id:     int
+    trabajador_nombre: str
+    trabajador_rut:    Optional[str] = None
+    tipotrabajador_id: int                            # 1=propio, 2=contratista
+    cantidad:          float
+
+
+class IndicadorRendimientoActividad(BaseModel):
+    actividad_id:       int
+    labor_id:           int
+    labor_nombre:       str
+    ceco_id:            int
+    ceco_nombre:        str
+    hora_inicio:        time
+    hora_fin:           time
+    unidad_medida_id:   int
+    unidad_nombre:      str
+    tipopersonal_id:    int                           # 1=propio, 2=contratista
+    tiporendimiento_id: int                           # 1=individual, 2=grupal
+    cantidad_total:     float
+    trabajadores:       List[IndicadorRendimientoTrabajador]
+
+
+class IndicadorRendimientoFecha(BaseModel):
+    fecha:       date
+    actividades: List[IndicadorRendimientoActividad]

@@ -302,6 +302,16 @@ GET /indicadores/horas-diarias-propios?campo_id=&fecha_desde=&fecha_hasta=
     → devuelve: horas_individual, horas_grupal, horas_trabajadas,
       horas_permiso, total_horas, horas_esperadas, diferencia, cumple
 
+GET /indicadores/rendimientos?campo_id=&fecha_desde=&fecha_hasta=
+    → resumen de rendimientos anidado: fecha → actividad → trabajador
+    → incluye propios Y contratistas (no filtra por tipopersonal_id)
+    → filtros: campo_id + usuario_id=logueado + actividad.estado_id=1
+    → cada actividad trae labor, ceco, horario, unidad_medida y cantidad_total
+    → para actividades individuales: cantidad de cada rendimiento del trabajador
+    → para actividades grupales: rendimiento_total dividido en partes iguales
+      entre los trabajadores asignados en actividad_trabajador
+    → omite actividades sin rendimientos registrados
+
 # Maestros — Permisos (SOLO trabajadores propios — tipotrabajador_id=1)
 POST   /permisos                           → 400 si el trabajador es contratista
 GET    /permisos?campo_id=&trabajador_id=  → filtra solo permisos de propios
