@@ -337,7 +337,7 @@ class PermisoResponse(BaseModel):
 
 class HorasTrabajadasItem(BaseModel):
     tipo:                  str                 # "individual" | "grupal"
-    rendimiento_id:        int
+    rendimiento_id:        int                 # id de rendimiento o rendimiento_grupal
     actividad_id:          int
     fecha:                 date
     hora_inicio:           time
@@ -346,10 +346,10 @@ class HorasTrabajadasItem(BaseModel):
     labor_nombre:          str
     ceco_id:               int
     ceco_nombre:           str
-    trabajador_id:         Optional[int] = None
-    trabajador_nombre:     Optional[str] = None
+    trabajador_id:         int                 # siempre presente (grupal expandido por trabajador)
+    trabajador_nombre:     str
     trabajador_rut:        Optional[str] = None
-    cantidad_trabajadores: Optional[int] = None
+    cantidad_trabajadores: Optional[int] = None   # solo grupal (informativo)
     horas_trabajadas:      float
     horas_extras:          float
 

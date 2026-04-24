@@ -337,6 +337,11 @@ DELETE /rendimientos/grupal/{id}            → solo si actividad.estado_id ∈ 
 GET /rendimientos/horas-trabajadas?campo_id=&fecha_desde=&fecha_hasta=
     → filtra: campo_id + usuario logueado + tipopersonal_id=1 + actividad.estado_id=1
     → incluye labor, ceco, hora_inicio, hora_fin
+    → grupales: se emite una fila por cada trabajador asignado en
+      actividad_trabajador (cada fila con trabajador_id/nombre/rut y las horas
+      del grupal). Múltiples filas comparten el mismo rendimiento_id (el grupal.id)
+    → el campo tipo ("individual" | "grupal") permite distinguir la fuente
+    → trabajador_id y trabajador_nombre SIEMPRE vienen presentes (nunca null)
 ```
 
 ---

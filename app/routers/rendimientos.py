@@ -199,16 +199,18 @@ async def listar_horas_trabajadas_propios(
         ))
 
     stmt_grp = (
-        select(RendimientoGrupal, Actividad, Labor, Ceco)
+        select(RendimientoGrupal, Actividad, Labor, Ceco, Trabajador)
         .join(Actividad, RendimientoGrupal.actividad_id == Actividad.id)
         .join(Labor, Actividad.labor_id == Labor.id)
         .join(Ceco, Actividad.ceco_id == Ceco.id)
+        .join(ActividadTrabajador, ActividadTrabajador.actividad_id == Actividad.id)
+        .join(Trabajador, Trabajador.id == ActividadTrabajador.trabajador_id)
         .where(*base_filters)
-        .order_by(Actividad.fecha.desc(), RendimientoGrupal.id.desc())
+        .order_by(Actividad.fecha.desc(), RendimientoGrupal.id.desc(), Trabajador.nombre)
     )
     res_grp = await db.execute(stmt_grp)
 
-    for g, a, l, c in res_grp.all():
+    for g, a, l, c, t in res_grp.all():
         items.append(HorasTrabajadasItem(
             tipo="grupal",
             rendimiento_id=g.id,
@@ -220,6 +222,9 @@ async def listar_horas_trabajadas_propios(
             labor_nombre=l.nombre,
             ceco_id=c.id,
             ceco_nombre=c.nombre,
+            trabajador_id=t.id,
+            trabajador_nombre=t.nombre,
+            trabajador_rut=t.rut,
             cantidad_trabajadores=g.cantidad_trabajadores,
             horas_trabajadas=g.horas_trabajadas,
             horas_extras=g.horas_extras,
