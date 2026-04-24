@@ -34,7 +34,7 @@ No test suite exists yet. To add one: `pip install pytest pytest-asyncio httpx` 
 
 **Multi-tenant hierarchy:** `Empresa → Campo → Usuario`. A user belongs to one empresa and accesses multiple campos via the `usuario_campo` join table.
 
-**Database:** Remote MySQL at `200.73.20.99:35026`, database `lahornilla_control_labores`. Connection pool: size=10, max_overflow=20.
+**Database:** Remote MySQL at `186.64.118.105:3306`, database `agrico24_control_labores`. Connection pool: size=10, max_overflow=20.
 
 **Auth:** Bearer JWT, 8-hour expiration. Token payload: `{"sub": usuario_id}`. Three roles: `admin_empresa`, `supervisor`, `consultor`.
 

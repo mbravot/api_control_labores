@@ -4,11 +4,11 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Base de datos
-    DB_HOST: str = "200.73.20.99"
-    DB_PORT: int = 35026
-    DB_USER: str = "lahornilla_mbravo"
+    DB_HOST: str = "186.64.118.105"
+    DB_PORT: int = 3306
+    DB_USER: str = "agrico24_mbravo"
     DB_PASSWORD: str
-    DB_NAME: str = "lahornilla_control_labores"
+    DB_NAME: str = "agrico24_control_labores"
 
     # JWT
     SECRET_KEY: str
