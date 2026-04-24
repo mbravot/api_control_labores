@@ -9,9 +9,10 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_active_user, verify_campo_access
 from app.models.usuario import Usuario
-from app.models.actividad import Actividad, ActividadTrabajador, Rendimiento, Trabajador
+from app.models.actividad import Actividad, ActividadTrabajador, Rendimiento, RendimientoGrupal, Trabajador
 from app.schemas.actividad import (
     RendimientoCreate, RendimientoBulkCreate, RendimientoUpdate, RendimientoResponse,
+    RendimientoGrupalCreate, RendimientoGrupalUpdate, RendimientoGrupalResponse,
 )
 
 router = APIRouter(prefix="/rendimientos", tags=["Rendimientos"])
@@ -137,6 +138,130 @@ async def listar_rendimientos(
 
 
 # ---------------------------------------------------------------
+# POST /rendimientos/grupal
+# ---------------------------------------------------------------
+
+@router.post("/grupal", response_model=RendimientoGrupalResponse, status_code=status.HTTP_201_CREATED)
+async def crear_rendimiento_grupal(
+    payload: RendimientoGrupalCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    rendimiento = await _get_rendimiento(payload.rendimiento_id, db)
+    await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+
+    existente = await db.execute(
+        select(RendimientoGrupal).where(RendimientoGrupal.rendimiento_id == payload.rendimiento_id)
+    )
+    if existente.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya existe un rendimiento grupal para este rendimiento",
+        )
+
+    grupal = RendimientoGrupal(
+        rendimiento_id=payload.rendimiento_id,
+        cantidad_trabajadores=payload.cantidad_trabajadores,
+        rendimiento_total=payload.rendimiento_total,
+        porcentajecontratista_id=payload.porcentajecontratista_id,
+    )
+    db.add(grupal)
+    await db.flush()
+    await db.refresh(grupal)
+    return grupal
+
+
+# ---------------------------------------------------------------
+# GET /rendimientos/grupal?rendimiento_id=
+# ---------------------------------------------------------------
+
+@router.get("/grupal", response_model=RendimientoGrupalResponse)
+async def obtener_rendimiento_grupal_por_rendimiento(
+    rendimiento_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    rendimiento = await _get_rendimiento(rendimiento_id, db)
+    await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+
+    result = await db.execute(
+        select(RendimientoGrupal).where(RendimientoGrupal.rendimiento_id == rendimiento_id)
+    )
+    grupal = result.scalar_one_or_none()
+    if grupal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rendimiento grupal no encontrado")
+    return grupal
+
+
+# ---------------------------------------------------------------
+# GET /rendimientos/grupal/{id}
+# ---------------------------------------------------------------
+
+@router.get("/grupal/{grupal_id}", response_model=RendimientoGrupalResponse)
+async def obtener_rendimiento_grupal(
+    grupal_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    grupal = await _get_grupal(grupal_id, db)
+    rendimiento = await _get_rendimiento(grupal.rendimiento_id, db)
+    await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+    return grupal
+
+
+# ---------------------------------------------------------------
+# PATCH /rendimientos/grupal/{id}
+# ---------------------------------------------------------------
+
+@router.patch("/grupal/{grupal_id}", response_model=RendimientoGrupalResponse)
+async def actualizar_rendimiento_grupal(
+    grupal_id: int,
+    payload: RendimientoGrupalUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    grupal = await _get_grupal(grupal_id, db)
+    rendimiento = await _get_rendimiento(grupal.rendimiento_id, db)
+    actividad = await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+
+    if actividad.estado_id not in (1, 2):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo se pueden modificar rendimientos de actividades en estado 'creada' o 'revisada'",
+        )
+
+    for field, value in payload.model_dump(exclude_none=True).items():
+        setattr(grupal, field, value)
+    await db.flush()
+    await db.refresh(grupal)
+    return grupal
+
+
+# ---------------------------------------------------------------
+# DELETE /rendimientos/grupal/{id}
+# ---------------------------------------------------------------
+
+@router.delete("/grupal/{grupal_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_rendimiento_grupal(
+    grupal_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    grupal = await _get_grupal(grupal_id, db)
+    rendimiento = await _get_rendimiento(grupal.rendimiento_id, db)
+    actividad = await _get_actividad_con_acceso(rendimiento.actividad_id, current_user, db)
+
+    if actividad.estado_id not in (1, 2):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo se pueden eliminar rendimientos de actividades en estado 'creada' o 'revisada'",
+        )
+
+    await db.delete(grupal)
+    await db.flush()
+
+
+# ---------------------------------------------------------------
 # PATCH /rendimientos/{id}
 # ---------------------------------------------------------------
 
@@ -211,6 +336,14 @@ async def _get_trabajadores_asignados(actividad_id: int, db: AsyncSession) -> se
         select(ActividadTrabajador.trabajador_id).where(ActividadTrabajador.actividad_id == actividad_id)
     )
     return set(result.scalars().all())
+
+
+async def _get_grupal(grupal_id: int, db: AsyncSession) -> RendimientoGrupal:
+    result = await db.execute(select(RendimientoGrupal).where(RendimientoGrupal.id == grupal_id))
+    g = result.scalar_one_or_none()
+    if g is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rendimiento grupal no encontrado")
+    return g
 
 
 async def _verificar_duplicado(actividad_id: int, trabajador_id: int, db: AsyncSession) -> None:

@@ -168,6 +168,18 @@ class Rendimiento(Base):
     created_at:       Mapped[Optional[str]] = mapped_column(TIMESTAMP, server_default=func.now())
     actividad:  Mapped["Actividad"]  = relationship(back_populates="rendimientos")
     trabajador: Mapped["Trabajador"] = relationship(back_populates="rendimientos")
+    grupal:     Mapped[Optional["RendimientoGrupal"]] = relationship(back_populates="rendimiento", uselist=False, cascade="all, delete-orphan")
+
+
+class RendimientoGrupal(Base):
+    __tablename__ = "rendimiento_grupal"
+    id:                       Mapped[int]   = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rendimiento_id:           Mapped[int]   = mapped_column(Integer, ForeignKey("rendimiento.id"), nullable=False)
+    cantidad_trabajadores:    Mapped[int]   = mapped_column(Integer, nullable=False)
+    rendimiento_total:        Mapped[float] = mapped_column(Float, nullable=False)
+    porcentajecontratista_id: Mapped[int]   = mapped_column(Integer, ForeignKey("porcentaje_contratista.id"), nullable=False)
+    rendimiento: Mapped["Rendimiento"]           = relationship(back_populates="grupal")
+    porcentaje:  Mapped["PorcentajeContratista"] = relationship()
 
 
 class Permiso(Base):

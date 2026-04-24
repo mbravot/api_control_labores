@@ -258,6 +258,32 @@ class RendimientoResponse(BaseModel):
 
 
 # ---------------------------------------------------------------
+# Rendimiento Grupal
+# ---------------------------------------------------------------
+
+class RendimientoGrupalCreate(BaseModel):
+    rendimiento_id:           int
+    cantidad_trabajadores:    int
+    rendimiento_total:        float
+    porcentajecontratista_id: int
+
+
+class RendimientoGrupalUpdate(BaseModel):
+    cantidad_trabajadores:    Optional[int]   = None
+    rendimiento_total:        Optional[float] = None
+    porcentajecontratista_id: Optional[int]   = None
+
+
+class RendimientoGrupalResponse(BaseModel):
+    id:                       int
+    rendimiento_id:           int
+    cantidad_trabajadores:    int
+    rendimiento_total:        float
+    porcentajecontratista_id: int
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------
 # Permiso
 # ---------------------------------------------------------------
 
