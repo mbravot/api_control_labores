@@ -7,6 +7,7 @@ from app.core.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
+    pool_recycle=1800,
     pool_size=10,
     max_overflow=20,
     echo=True, # True para ver las consultas SQL en consola
